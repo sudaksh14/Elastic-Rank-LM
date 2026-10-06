@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from models.elastoformer import *
 from utils.partial_freezing import freeze_linear_params, freeze_conv2d_params, freeze_layernorm_params
-from timm.models.layers import DropPath
+from timm.layers import DropPath
 import os
 import io
 

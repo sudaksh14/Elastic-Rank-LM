@@ -145,6 +145,65 @@ Two things fall out that neither paper claims:
    consistency term (feature-level KD, or CKA/Procrustes alignment between DN_i and DN_N at matched
    depth). Directly targets the stable-latent-space objective and should also stabilize (1).
 
+### 1.6 If you drop the freeze but keep pruning: does index alignment survive?
+
+Short answer: **yes, the index sets stay valid.** All N profiles are computed in a single
+`pruner.step` loop from the pretrained weights *before* any retraining (`main.py` ~356–461, core
+fine-tune only afterwards). Nestedness of the index sets is therefore fixed by construction, and
+joint sampling only changes *which* parameters receive gradients on a given step — never which
+indices belong to which level. No re-pruning happens during training, so nothing can drift.
+
+What does break is the **representation**, in three places.
+
+**(a) Physical rebuild → virtual slicing.** Today each level is a materially different module:
+`create_vit_general(dim_dict=rebuild_dim)` allocates new tensors, `update_vit_weights_global` copies
+weights in, `get_num_heads` recomputes head counts, and `ElasticViTSelfAttention` fields are patched
+per level. Joint sampling needs all N levels resident in one parameter set, switchable per step. So:
+one full-size tensor plus a per-level gather at forward time — the same refactor `ODLayer.inner_dim`
+performs in FlexRank, except pruning needs index *gathering* rather than prefix *slicing*.
+
+**(b) Permute once, offline — this is the key trick.** Surviving indices are scattered (arbitrary
+L1-saliency sets), so gathering costs on every forward. Sort each layer's dimensions **by the level
+at which they are introduced**: core indices first, then level-2's additions, then level-3's, etc.
+Level k then becomes `W[:d_k, :d_k]` — a contiguous, zero-copy view, mechanically identical to the
+rank axis. Constraints:
+
+- the permutation must be applied consistently to both sides of every DepGraph-coupled pair
+  (out-channels of A ↔ in-channels of B);
+- it must respect head boundaries — permute whole heads, or within-head only, or attention structure
+  is scrambled;
+- for the LM port, RoPE's `(2i, 2i+1)` pairing constrains it further (see §3).
+
+**This may be the right answer for edge.** Joint nested training + permuted pruning indices gives
+contiguous slicing, **dense GEMMs at every mode**, and **no 2× factor memory** — sidestepping the
+entire §1.4 latency risk while preserving the §1.3 memory headline. The trade against the rank axis
+is then explicit:
+
+| | permuted pruning + joint sampling | nested low-rank |
+|---|---|---|
+| kernels at deploy | dense GEMM, one per layer | two GEMMs (GAR helps, doesn't fix) |
+| memory | ~1× (no factor duplication) | 2× uncapped, <1× if `r_max` capped |
+| ordering | heuristic (L1 / activation-aware) | principled (SVD, Eckart–Young) |
+| NSL guarantee (Thm 4.3) | **does not transfer** | holds |
+| latent filtration (§1.5) | no — indices reallocate semantics | yes — monotone subspace nesting |
+
+**(c) Update-frequency imbalance.** Without the freeze, core indices receive gradients at every
+sampled budget; the outermost shell only when the largest level is sampled — 1/6 as often at N=6.
+FlexRank absorbs this via the α_k weighting (Eq. 6) and its samplers. Options: non-uniform sampling
+probabilities, per-parameter LR scaling by gradient-receipt frequency, or the sandwich rule (always
+sample smallest + largest + one random — `PredefinedModelsSampler` already exposes a `sandwich` flag).
+
+**Caveat worth stating plainly.** Thm 4.3 does *not* transfer to pruning space. Its proof leans on
+Eckart–Young: sub-objective `r+1` need only learn the residual `A_{r+1} − A_r` because the SVD prefix
+is provably the optimal rank-`r` approximation. L1-saliency index sets carry no such optimality, so
+nestedness is necessary but not sufficient. Expect joint sampling to help empirically — slimmable
+networks do work — but without the guarantee. This remains the strongest theoretical argument for the
+rank axis, and should be acknowledged rather than elided.
+
+**Side benefit, axis-independent.** With joint sampling there is no need to store pruned weight
+*values* as metadata at all — every parameter lives in one tensor permanently. The ~1 MB/DN collapses
+to N integers per layer whichever axis you choose.
+
 ---
 
 ## 2. Other improvements, roughly by value/effort
@@ -247,10 +306,14 @@ most surprising if it holds.
 ## 5. Suggested sequencing
 
 1. Ablate frozen-prefix vs joint nested sampling on ViT-B (§1.2) — cheapest test of the core claim,
-   and it does not require changing the compression axis.
+   and it does not require changing the compression axis. Requires the virtual-slicing refactor
+   (§1.6a) but not the permutation.
 2. Import the DP profile search into the existing pruning pipeline (§2.3).
-3. Prototype rank-axis Elastoformer with a capped `r_max` (§1.3) and measure Orin/Nano latency
-   honestly at B=1 (§1.4). Decide the axis on that measurement, not on FLOPs.
+3. **Resolve the axis fork (§1.6).** Two prototypes, judged on measured Orin/Nano latency at B=1
+   (§1.4), not on FLOPs:
+   - permuted pruning indices + joint sampling — dense kernels, ~1× memory, no theory;
+   - rank axis with capped `r_max` (§1.3) — 2 GEMMs, subspace filtration, Thm 4.3 holds.
+   A hybrid is legitimate: rank where the DP wants `r/min(m,n) ≲ 0.3`, pruning elsewhere.
 4. LM port using `flexrank` as backend (§3), Llama-3.2-1B first.
 5. Multimodal budget allocation + input-dependent profile selection (§4.5, §2.6).
 

@@ -210,11 +210,12 @@ def main(args):
     else: raise NotImplementedError
 
     # DATALOADERS
-    if args.dataset_name.startswith('imagenet'):
-        train_loader, val_loader, num_classes = load_imagenet(datapath=args.data_path, batch_size=args.train_batch_size, distributed=args.distributed, ra_sampler=args.ra_sampler, debug=args.debug)
     if args.dataset_name.startswith('imagenette'):
         train_loader, val_loader, train_sampler, val_sampler = load_imagenette(args)
-    if args.dataset_name.startswith('cifar'):
+        num_classes = 1000  # classifier head is kept at 1000 classes for imagenette
+    elif args.dataset_name.startswith('imagenet'):
+        train_loader, val_loader, num_classes = load_imagenet(datapath=args.data_path, batch_size=args.train_batch_size, distributed=args.distributed, ra_sampler=args.ra_sampler, debug=args.debug)
+    elif args.dataset_name.startswith('cifar'):
         train_loader, val_loader, train_sampler, val_sampler, num_classes = load_cifar(dataset=args.dataset_name, batch_size=args.train_batch_size, distributed=args.distributed)
     else:
         train_loader, val_loader, num_classes = load_dummy_data(batch_size=args.train_batch_size, distributed=args.distributed)
@@ -459,7 +460,6 @@ def main(args):
 
     print("Iterative Pruning complete")
     torch.save(model, "./saves/pruning_metadata/core_model.pt")
-    exit()
 
     model_info = get_vit_info(non_pruned_weights=model.state_dict(), num_heads=orig_copy.config.num_attention_heads, core_model=True)
     print("Model Info:", model_info)

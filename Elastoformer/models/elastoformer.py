@@ -36,9 +36,10 @@ import math
 # Elastic Config
 # -----------------------------
 class ElasticViTConfig(ViTConfig):
-    def __init__(self, *args, pruned_dim=768, **kwargs):
+    def __init__(self, *args, pruned_dim=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.pruned_dim = pruned_dim
+        # default: unpruned QKV width == hidden_size (e.g. 768 for base, 384 for small)
+        self.pruned_dim = pruned_dim if pruned_dim is not None else self.hidden_size
 
 
 # -----------------------------
@@ -208,6 +209,9 @@ class ElasticViTForImageClassification(ViTForImageClassification):
     """
     Classification head for Elastic ViT — uses ElasticViTModel backbone.
     """
+    # from_pretrained must build an ElasticViTConfig (carries pruned_dim), not the inherited ViTConfig
+    config_class = ElasticViTConfig
+
     def __init__(self, config: ElasticViTConfig):
         # skip ViTForImageClassification init to avoid internal checks
         nn.Module.__init__(self)
