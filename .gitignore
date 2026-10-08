@@ -1,2 +1,17 @@
-./project
-./related papers
+# local-only folders
+/project/
+/related papers/
+
+# generated / run artifacts
+outputs/
+GIT_SHA
+
+# python
+__pycache__/
+*.pyc
+.venv*/
+
+# model files
+*.onnx
+*.pth
+*.pt

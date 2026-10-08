@@ -323,9 +323,11 @@ def fine_tuner(args, device, model, data_loader, data_loader_test, rebuild=False
             metrics = train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args, model_ema, scaler, 
                                       CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")), mixup_fn=mixup_fn)
         
-        test_acc1,_ = evaluate(model, criterion, data_loader_test, device=device, dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
-        if model_ema:
-            test_ema_acc1,_ = evaluate(model_ema, criterion, data_loader_test, device=device, log_suffix="EMA", dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
+        test_acc1, test_ema_acc1 = float("nan"), float("nan")
+        if (epoch + 1) % getattr(args, "eval_every", 1) == 0 or epoch == args.epochs - 1:
+            test_acc1,_ = evaluate(model, criterion, data_loader_test, device=device, dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
+            if model_ema:
+                test_ema_acc1,_ = evaluate(model_ema, criterion, data_loader_test, device=device, log_suffix="EMA", dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
         
         wandb_metrics = metrics.get_all_averages()
 
@@ -514,9 +516,11 @@ def fine_tuner_core(args, device, model, data_loader, data_loader_test):
 
         metrics = train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, args, model_ema, scaler, 
                                   CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")), mixup_fn=mixup_fn)
-        test_acc1,_ = evaluate(model, criterion, data_loader_test, device=device, dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
-        if model_ema:
-            test_ema_acc1,_ = evaluate(model_ema, criterion, data_loader_test, device=device, log_suffix="EMA", dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
+        test_acc1, test_ema_acc1 = float("nan"), float("nan")
+        if (epoch + 1) % getattr(args, "eval_every", 1) == 0 or epoch == args.core_epochs - 1:
+            test_acc1,_ = evaluate(model, criterion, data_loader_test, device=device, dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
+            if model_ema:
+                test_ema_acc1,_ = evaluate(model_ema, criterion, data_loader_test, device=device, log_suffix="EMA", dist=args.distributed, CNN=(args.model_name.startswith("resnet") or args.model_name.startswith("vgg")))
         
         wandb_metrics = metrics.get_all_averages()
 

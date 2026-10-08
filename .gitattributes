@@ -1,0 +1,4 @@
+# Slurm and shell scripts must keep LF endings (CRLF is rejected by sbatch)
+*.sh text eol=lf
+*.sbatch text eol=lf
+.gitignore text eol=lf

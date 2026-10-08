@@ -35,6 +35,12 @@ def get_args_parser(add_help=True):
     parser.add_argument('--global_pruning', default=False, action='store_true', help='enables global pruning(global_compression = 1-pruning_ratio)')
     parser.add_argument('--isomorphic', default=False, action='store_true', help='enables isomorphic pruning ECCV 2024, https://arxiv.org/abs/2407.04616, overides global_pruning')
     parser.add_argument('--rebuild', default=False, action='store_true', help='Rebuilding for adaptivity')
+    parser.add_argument('--train_subset', default=0.0, type=float, help='fraction of ImageNet train (class-balanced, fixed seed); 0 = all')
+    parser.add_argument('--subset_seed', default=0, type=int, help='seed of the class-balanced subset')
+    parser.add_argument('--corrected_init', default=False, action='store_true', help='[E4 corrected frozen baseline] init every rebuilt level from the full pretrained slice (all blocks, cls/pos) before copying trained core weights')
+    parser.add_argument('--val_workers', default=None, type=int, help='dataloader workers for val (default: same as train)')
+    parser.add_argument('--eval_every', default=1, type=int, help='validate every N epochs (and at the last epoch)')
+    parser.add_argument('--results_dir', default='.', type=str, help='where per-level results.json is written')
     
     parser.add_argument('--train_batch_size', default=128, type=int, help='train batch size')
     parser.add_argument('--val_batch_size', default=128, type=int, help='val batch size')
@@ -191,6 +197,9 @@ def main(args):
     if args.distributed:
             train_utils.init_distributed_mode(args)
     print(args)
+    os.makedirs('./saves/pruning_metadata', exist_ok=True)
+    os.makedirs(args.results_dir, exist_ok=True)
+    level_results = {}
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -214,7 +223,9 @@ def main(args):
         train_loader, val_loader, train_sampler, val_sampler = load_imagenette(args)
         num_classes = 1000  # classifier head is kept at 1000 classes for imagenette
     elif args.dataset_name.startswith('imagenet'):
-        train_loader, val_loader, num_classes = load_imagenet(datapath=args.data_path, batch_size=args.train_batch_size, distributed=args.distributed, ra_sampler=args.ra_sampler, debug=args.debug)
+        train_loader, val_loader, num_classes = load_imagenet(datapath=args.data_path, batch_size=args.train_batch_size, distributed=args.distributed, ra_sampler=args.ra_sampler, debug=args.debug,
+                                                              num_workers=args.workers, subset_frac=args.train_subset, subset_seed=args.subset_seed,
+                                                              subset_file=os.path.join(args.results_dir, 'train_subset.json') if args.train_subset > 0 else None, val_workers=args.val_workers)
     elif args.dataset_name.startswith('cifar'):
         train_loader, val_loader, train_sampler, val_sampler, num_classes = load_cifar(dataset=args.dataset_name, batch_size=args.train_batch_size, distributed=args.distributed)
     else:
@@ -528,6 +539,13 @@ def main(args):
             rebuild_dim = get_vit_info(pruned_weights, rebuilding_weights, num_heads=(6 if "small" in args.model_name else None))
             print("Model Info:", rebuild_dim)
             rebuilt_model = create_vit_general(dim_dict=rebuild_dim, num_classes=num_classes).to(device)
+            if args.corrected_init:
+                # keep the (trained) core x core and (pretrained) shell x shell copies below, but start every other block,
+                # cls_token and position_embeddings from the pretrained slice instead of random init (finding C12)
+                if i == 0:
+                    from models.sliced_vit import build_level_indices, slice_state_dict
+                    ci_groups, _ = build_level_indices(pruned_index_out, args.pruning_steps, orig_statedict)
+                rebuilt_model.load_state_dict({k: v.to(device) for k, v in slice_state_dict(orig_statedict, lambda tag, L: ci_groups[tag if tag == 'E' else (tag[0], int(tag[1:]))][L], i + 2).items()}, strict=True)
             rebuilt_model,_,non_pruned_index_mapped = update_vit_weights_global(rebuilt_model, [pruned_index_in[args.pruning_steps-i-1], pruned_index_out[args.pruning_steps-i-1]], 
                                                [non_pruned_index_in[args.pruning_steps-i-1], non_pruned_index_out[args.pruning_steps-i-1]], 
                                                pruned_weights_recorder[f"Level_{i+2}"], non_pruned_weights_recorder[f"Level_{i+2}"], device=device)
@@ -555,6 +573,8 @@ def main(args):
                 print("Testing accuracy of the rebuild model...")
                 acc_rebuilt, loss_rebuilt = evaluate(rebuilt_model, criterion, val_loader, device=device, dist=args.distributed)
                 acc_recorder.append(acc_rebuilt)
+                level_results[f"Level_{i+2}"] = dict(top1=acc_rebuilt, loss=loss_rebuilt)
+                import json as _json; _json.dump(dict(core=dict(top1=acc_pruned, loss=loss_pruned), base=dict(top1=acc_ori, loss=loss_ori), levels=level_results, args=vars(args)), open(os.path.join(args.results_dir, 'results.json'), 'w'), indent=1, default=str)
                 print("Accuracy: %.4f, Loss: %.4f"%(acc_rebuilt, loss_rebuilt))
 
             if args.save_as is not None: 

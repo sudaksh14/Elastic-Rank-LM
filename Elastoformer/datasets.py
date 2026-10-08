@@ -108,7 +108,8 @@ def load_imagenet(
         recount=1,
         eval_crop_ratio=0.875,
         batch_size=128,
-        num_workers=16, distributed=True, ra_sampler=True, ra_reps=3, debug=False):
+        num_workers=16, distributed=True, ra_sampler=True, ra_reps=3, debug=False,
+        subset_frac=0.0, subset_seed=0, subset_file=None, val_workers=None):
     class Args:
         pass
     args = Args()
@@ -130,6 +131,23 @@ def load_imagenet(
     train_dataset, num_classes = build_dataset(is_train=True, args=args)
     val_dataset, _ = build_dataset(is_train=False, args=args)
     
+    if subset_frac and subset_frac > 0:
+        # fixed, class-balanced train subset (E4a pilot). Index list is written to subset_file for provenance.
+        import numpy as np, hashlib, json
+        tg = np.asarray(train_dataset.targets)
+        rng = np.random.RandomState(subset_seed)
+        keep = []
+        for c in np.unique(tg):
+            ids = np.where(tg == c)[0]
+            keep += rng.choice(ids, max(1, int(round(subset_frac * len(ids)))), replace=False).tolist()
+        keep = sorted(keep)
+        h = hashlib.sha256(np.asarray(keep, dtype=np.int64).tobytes()).hexdigest()[:16]
+        print(f"Train subset: {len(keep)}/{len(tg)} images (frac={subset_frac}, seed={subset_seed}, sha256[:16]={h})")
+        if subset_file:
+            os.makedirs(os.path.dirname(subset_file) or ".", exist_ok=True)
+            json.dump(dict(frac=subset_frac, seed=subset_seed, n=len(keep), sha256_16=h, indices=keep), open(subset_file, "w"))
+        train_dataset = Subset(train_dataset, indices=keep)
+
     if debug:
         print("Debug mode: using smaller datasets")
         train_dataset = Subset(train_dataset, indices=torch.randperm(len(train_dataset))[:4000])
@@ -154,7 +172,7 @@ def load_imagenet(
     val_dataset = DataLoader(
         val_dataset, sampler=val_sampler,
         batch_size=batch_size,
-        num_workers=num_workers, pin_memory=True, drop_last=False)
+        num_workers=(num_workers if val_workers is None else val_workers), pin_memory=True, drop_last=False)
 
 
     return train_dataset, val_dataset, num_classes
