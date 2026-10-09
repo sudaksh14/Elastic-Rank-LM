@@ -16,13 +16,13 @@ Rules
 | ID | Title | Status | Depends on | Where | Est. GPU-h | Last update |
 |---|---|---|---|---|---|---|
 | E0 | Env build + CPU audit of pruning metadata / rebuild path | DONE | I-0, I-1 | DAS-6 fatq (CPU) | 0 | 2026-10-08 |
-| E1 | Reproduce Table 1 from published ckpts + nestedness audit | READY (queued, job 27682) | E0 | DAS-6 defq GPU | ≤1 | 2026-10-08 |
+| E1 | Reproduce Table 1 from published ckpts + nestedness audit | READY (queued, job 27712; resubmitted 2026-10-09 with exclusive node) | E0 | DAS-6 defq GPU | ≤1 | 2026-10-08 |
 | E2 | Training-free fronts: pruning vs rank, DP, r_max, additive error | READY (queued, job 27698) | I-2, I-3, E1 | DAS-6 defq GPU | 3–5 | 2026-10-08 |
-| E3 | B=1 kernel microbenchmark | READY (queued, job 27699) | I-0 | DAS-6 defq GPU | ≤0.5 | 2026-10-08 |
-| E4a | Frozen-prefix vs joint nested sampling (pilot) | READY (queued: smoke 27690, arms 27691-27697) | E0, I-4, I-5, I-6 | DAS-6 defq GPU | ~7 runs × 2–4 | 2026-10-08 |
+| E3 | B=1 kernel microbenchmark | READY (queued, job 27714) | I-0 | DAS-6 defq GPU | ≤0.5 | 2026-10-08 |
+| E4a | Frozen-prefix vs joint nested sampling (pilot) | READY (queued: smoke 27716, arms 27717-27723) | E0, I-4, I-5, I-6 | DAS-6 defq GPU | ~7 runs × 2–4 | 2026-10-08 |
 | E4b | Frozen-prefix vs joint nested sampling (full ImageNet) | PLANNED | E4a | DAS-6 | 40–60 | 2026-10-06 |
-| E5 | DP per-layer ratio search, pruning axis | READY (training-free part queued, job 27706; trained part deferred to E4a gate) | E2, I-7, E4a | DAS-6 defq GPU | 3–6 | 2026-10-08 |
-| E6 | Rank-axis ViT, joint FlexRank training, capped r_max | READY (queued, jobs 27703-27705: r_cap 1.0/0.5/0.3) | E2, E3, E4a, I-8 | DAS-6 defq GPU | 3 × 3–5 | 2026-10-08 |
+| E5 | DP per-layer ratio search, pruning axis | READY (training-free part queued, job 27715; trained part deferred to E4a gate) | E2, I-7, E4a | DAS-6 defq GPU | 3–6 | 2026-10-08 |
+| E6 | Rank-axis ViT, joint FlexRank training, capped r_max | READY (queued, jobs 27724-27726: r_cap 1.0/0.5/0.3) | E2, E3, E4a, I-8 | DAS-6 defq GPU | 3 × 3–5 | 2026-10-08 |
 | E7 | Axis fork on Jetson (measured latency) | PLANNED | E4–E6, I-9 | Jetson | 0 (device) | 2026-10-06 |
 | E8 | FlexRank LM reproduction: GPT-2 → Llama-3.2-1B | PLANNED | I-0(b), I-10 | DAS-6 | 3 → 120 | 2026-10-06 |
 | E9 | LM diagnostics: additive error, TTFT/TPOT, KV reuse | PLANNED | E8 | DAS-6 | 3–6 | 2026-10-06 |
@@ -44,6 +44,7 @@ Rules
 | 2026-10-08 | GPU nodes node205-208 fully held by another user's 4×15-day jobs (started ~2026-10-06, ~13 d left). Rule from user: GPU-needing jobs are never run on CPU nodes; queue behind and wait. Only CPU-only work (E0, downloads) runs on `fatq` | user | user |
 | 2026-10-08 | **Finding C12:** `update_vit_weights_global` fills only shell×shell and core×core blocks of each rebuilt weight matrix. Off-diagonal blocks (shell rows × core cols and vice versa) keep random init (only 64-68% of a rebuilt FFN matrix equals the pretrained slice, tiny-model test). Joint training starts from the full pretrained matrices, so an unmodified F arm vs J would not be a fair init comparison. E4a therefore runs F-faithful (paper) AND F-corrected (all blocks, cls/pos from pretrained slice; `slice_state_dict`) | tests/test_sliced_equivalence.py | analysis |
 | 2026-10-08 | I-5 done: `models/sliced_vit.py` (SlicedViT) equals physically sized models at every level (max logit diff < 6e-7, two configs, CPU) | tests/test_sliced_equivalence.py | analysis |
+| 2026-10-09 | DAS-6 rule: one job owns a whole node (`#SBATCH --exclusive` in every batch script). Loader: persistent workers + prefetch 4; mixup moved to GPU; data-wait % logged per run (`data_wait_frac`). Workers raised to 32 for E4a/E6 on the exclusive node. Node probe 27711 (RAM vs SSD, NFS vs local speed) pending: local staging is NOT enabled until it reports | user + analysis | user |
 | — | Frozen baseline variant for E4: faithful / corrected / both. E0 shows cls/pos are NOT carried into rebuilt levels (F arm "faithful" inherits that) | E0 | user |
 
 ---
@@ -140,7 +141,7 @@ Rules
 - **Next experiment:** E2
 
 ### E2 — Training-free Pareto fronts: pruning vs rank, uniform vs DP, r_max, additive error
-- **Status:** READY (queued, job 27698; includes an in-job real-data smoke that aborts on failure)
+- **Status:** READY (queued, job 27713; includes an in-job real-data smoke that aborts on failure)
 - **Date:** queued 2026-10-08
 - **Hypothesis:** Full-rank SVD/DataSVD reproduces base accuracy (S1). DataSVD ≥ SVD and DP ≥ uniform at matched params.
   Additive-error Spearman ρ at ViT-B is reported (no prior expectation beyond FlexRank's 4-layer MNIST check).
@@ -160,7 +161,7 @@ Rules
 - **Next experiment:** E4a (recipe), E5/E6 (profiles, r_max)
 
 ### E3 — B=1 kernel microbenchmark (datacenter proxy)
-- **Status:** READY (queued, job 27699)
+- **Status:** READY (queued, job 27714)
 - **Date:** queued 2026-10-08
 - **Hypothesis:** For ViT-B prefill shapes, two-GEMM low-rank beats matched-param dense-pruned only below
   r/min ≈ 0.3–0.4. For LM decode shapes, latency tracks bytes read.

@@ -266,13 +266,15 @@ def main():
     print(f"steps_per_epoch={steps_per_epoch} total_steps={total_steps} sampler={args.sampler} loss=ce{ce_w}/kl{kl_w}", flush=True)
     eval_every = int(args.eval_every_level_epochs * steps_per_epoch / levels_per_step) if args.eval_every_level_epochs else 0
     t_start, imgs, done = time.time(), 0, False
+    data_wait, t_fetch = 0.0, time.time()
     while not done:
         for x, y in train_loader:
+            data_wait += time.time() - t_fetch          # time spent waiting for the loader (per step)
             if step >= total_steps:
                 done = True; break
-            if mix is not None:
-                x, y = mix(x, y)
             x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+            if mix is not None:                          # mixup on the GPU (timm allocates targets on x.device)
+                x, y = mix(x, y)
             for g in opt.param_groups:
                 g["lr"] = lr_at(step)
             opt.zero_grad(set_to_none=True)
@@ -301,8 +303,10 @@ def main():
             else:
                 opt.step()
             step += 1; imgs += x.shape[0] * len(lv)
+            t_fetch = time.time()
             if step % args.print_freq == 0 or step == 1:
-                print(f"step {step}/{total_steps} lv={lv} loss={tot:.4f} gn={float(gn):.2f} lr={lr_at(step):.2e} {imgs / (time.time() - t_start):.0f} img/s mem={torch.cuda.max_memory_allocated() / 2**30 if torch.cuda.is_available() else 0:.1f}GB", flush=True)
+                el = time.time() - t_start
+                print(f"step {step}/{total_steps} lv={lv} loss={tot:.4f} gn={float(gn):.2f} lr={lr_at(step):.2e} {imgs / el:.0f} img/s data_wait={100 * data_wait / el:.1f}% mem={torch.cuda.max_memory_allocated() / 2**30 if torch.cuda.is_available() else 0:.1f}GB", flush=True)
             if eval_every and step % eval_every == 0 and step < total_steps:
                 ev = evaluate_levels(model, val_loader, device, levels, args.val_limit)
                 hist.append(dict(step=step, eval=ev)); print("EVAL", step, {L: round(v["top1"], 2) for L, v in ev.items()}, flush=True)
@@ -312,7 +316,7 @@ def main():
 
     wall = time.time() - t_start
     ev = evaluate_levels(model, val_loader, device, levels, args.val_limit)
-    res = dict(exp=args.exp_name, levels={L: dict(**ev[L], params_M=nparams[L] / 1e6) for L in levels}, mean_top1=sum(v["top1"] for v in ev.values()) / len(ev),
+    res = dict(exp=args.exp_name, data_wait_frac=data_wait / max(wall, 1e-9), levels={L: dict(**ev[L], params_M=nparams[L] / 1e6) for L in levels}, mean_top1=sum(v["top1"] for v in ev.values()) / len(ev),
                counts=counts, wall_clock_s=wall, train_img_per_s=imgs / max(wall, 1e-9), steps=total_steps, args=vars(args), hist=hist,
                gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu")
     json.dump(res, open(os.path.join(args.out, "results.json"), "w"), indent=1)

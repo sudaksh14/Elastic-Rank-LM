@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --exclusive
 #SBATCH --job-name=E3_bench
 #SBATCH --partition=defq
 #SBATCH --gres=gpu:1

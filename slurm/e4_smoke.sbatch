@@ -1,9 +1,10 @@
 #!/bin/bash
 # GPU smoke test of every code path the E4a jobs use (real DeiT-B weights, tiny data). ~15 min. E4a runs depend on it (afterok).
+#SBATCH --exclusive
 #SBATCH --job-name=E4_smoke
 #SBATCH --partition=defq
 #SBATCH --gres=gpu:1
-#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=12
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=48
 #SBATCH --time=01:00:00
 #SBATCH --output=/var/scratch/skalra/elastoSLM/runs/E4smoke_%j.out
 set -uo pipefail
@@ -23,6 +24,6 @@ done
 # J arm (joint): CE+uniform, KD+sandwich
 for cfg in "uniform ce" "sandwich kd"; do set -- $cfg
   python $REPO/Elastoformer/train_nested.py --exp_name smokeJ_$1_$2 --out $RD/J_$1_$2 $COMMON --pruning_ratio 0.8 --pruning_steps 3 --sampler $1 --loss $2 \
-     --total_level_epochs 2 --train_subset 0.01 --batch_size 64 --amp --warmup_epochs 0.2 --val_limit 1000 --workers 8 --print_freq 10 || { echo "FAILED J $cfg"; rc=1; }
+     --total_level_epochs 2 --train_subset 0.01 --batch_size 64 --amp --warmup_epochs 0.2 --val_limit 1000 --workers 16 --print_freq 10 || { echo "FAILED J $cfg"; rc=1; }
 done
 echo SMOKE_DONE rc=$rc; exit $rc

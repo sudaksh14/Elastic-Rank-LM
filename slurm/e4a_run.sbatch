@@ -5,10 +5,11 @@
 #   J   joint nested sampling, CE            (train_nested.py)
 #   JKD joint nested sampling, KD from the frozen pretrained model
 # Budget: N=3 (4 levels), 10 epochs per stage on a 10% class-balanced train subset = 40 level-epochs for every arm. 1 GPU.
+#SBATCH --exclusive
 #SBATCH --job-name=E4a
 #SBATCH --partition=defq
 #SBATCH --gres=gpu:1
-#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=12
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=48
 #SBATCH --time=12:00:00
 #SBATCH --output=/var/scratch/skalra/elastoSLM/runs/E4a_%j.out
 set -uo pipefail
@@ -21,11 +22,11 @@ case $ARM in
   F|Fc)
     cd $RD
     python $REPO/Elastoformer/main.py --exp_name E4a_${ARM}_cr$CR $COMMON --dataset_name imagenet --data_path $IMAGENET --iterative \
-      --train_batch_size 128 --val_batch_size 256 --workers 10 --val_workers 4 --test_accuracy --rebuild --epochs 10 --core_epochs 10 \
+      --train_batch_size 128 --val_batch_size 256 --workers 32 --val_workers 8 --test_accuracy --rebuild --epochs 10 --core_epochs 10 \
       --lr-warmup-epochs 1 --core_weight_decay 0.05 --clip-grad-norm 1 --eval_every 5 --results_dir $RD --save_as $RD/ckpt/ \
       $( [ "$ARM" = Fc ] && echo --corrected_init ) ;;
   J|JKD)
     python $REPO/Elastoformer/train_nested.py --exp_name E4a_${ARM}_cr$CR --out $RD $COMMON --sampler uniform --loss $( [ "$ARM" = JKD ] && echo kd || echo ce ) \
-      --total_level_epochs 40 --batch_size 128 --warmup_epochs 1 --workers 10 --val_workers 4 --eval_every_level_epochs 10 ;;
+      --total_level_epochs 40 --batch_size 128 --warmup_epochs 1 --workers 32 --val_workers 8 --eval_every_level_epochs 10 ;;
   *) echo "unknown ARM"; exit 2 ;;
 esac

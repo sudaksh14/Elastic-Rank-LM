@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --exclusive
 #SBATCH --job-name=dl_ckpt
 #SBATCH --partition=fatq
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=2

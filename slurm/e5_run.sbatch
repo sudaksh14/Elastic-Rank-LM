@@ -1,5 +1,6 @@
 #!/bin/bash
 # E5 (training-free): FlexRank DP vs uniform internal widths on the pruning axis, same ranking, matched params. 1 GPU. Smoke first, aborts on failure.
+#SBATCH --exclusive
 #SBATCH --job-name=E5_dp_prune
 #SBATCH --partition=defq
 #SBATCH --gres=gpu:1

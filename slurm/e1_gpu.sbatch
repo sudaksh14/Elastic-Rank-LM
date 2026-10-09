@@ -1,5 +1,6 @@
 #!/bin/bash
 # E1 on GPU: all three CRs sequentially, 1 GPU.  sbatch slurm/e1_gpu.sbatch
+#SBATCH --exclusive
 #SBATCH --job-name=E1_gpu
 #SBATCH --partition=defq
 #SBATCH --gres=gpu:1

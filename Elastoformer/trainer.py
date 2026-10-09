@@ -21,9 +21,9 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, epoch, arg
     header = f"Epoch: [{epoch}]"
     for i, (image, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
         start_time = time.time()
-        if mixup_fn is not None:
+        image, target = image.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        if mixup_fn is not None:   # on the device: timm mixup allocates its targets on x.device
             image, target = mixup_fn(image, target)
-        image, target = image.to(device), target.to(device)
         with torch.autocast(device_type="cuda", enabled=scaler is not None):
             if CNN:
                 output = model(image)
@@ -70,9 +70,9 @@ def train_one_epoch_freeze(model, in_freeze_indices, out_freeze_indices, criteri
     header = f"Epoch: [{epoch}]"
     for i, (image, target) in enumerate(metric_logger.log_every(data_loader, args.print_freq, header)):
         start_time = time.time()
-        if mixup_fn is not None:
+        image, target = image.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        if mixup_fn is not None:   # on the device: timm mixup allocates its targets on x.device
             image, target = mixup_fn(image, target)
-        image, target = image.to(device), target.to(device)
         with torch.autocast(device_type="cuda", enabled=scaler is not None):
             if CNN:
                 output = model(image)

@@ -1,5 +1,6 @@
 #!/bin/bash
 # E2: training-free fronts (prune vs rank), DP, r_max caps, additive-error check. 1 GPU. A short real-data smoke runs first and aborts the job on failure.
+#SBATCH --exclusive
 #SBATCH --job-name=E2_fronts
 #SBATCH --partition=defq
 #SBATCH --gres=gpu:1

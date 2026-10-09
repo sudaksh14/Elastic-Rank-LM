@@ -164,15 +164,19 @@ def load_imagenet(
         val_sampler = torch.utils.data.SequentialSampler(val_dataset)
 
 
+    # persistent workers: no respawn at every pass over the loader; prefetch hides NFS latency
+    tw = num_workers
+    vw = num_workers if val_workers is None else val_workers
+    lkw = lambda w: dict(persistent_workers=w > 0, prefetch_factor=4 if w > 0 else None)
     train_dataset = DataLoader(
         train_dataset, sampler=train_sampler,
         batch_size=batch_size,
-        num_workers=num_workers, pin_memory=True, drop_last=True)
+        num_workers=tw, pin_memory=True, drop_last=True, **lkw(tw))
 
     val_dataset = DataLoader(
         val_dataset, sampler=val_sampler,
         batch_size=batch_size,
-        num_workers=(num_workers if val_workers is None else val_workers), pin_memory=True, drop_last=False)
+        num_workers=vw, pin_memory=True, drop_last=False, **lkw(vw))
 
 
     return train_dataset, val_dataset, num_classes

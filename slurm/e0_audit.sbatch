@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --exclusive
 #SBATCH --job-name=E0_audit
 #SBATCH --partition=fatq
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=16
