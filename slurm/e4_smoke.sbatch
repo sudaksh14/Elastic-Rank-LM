@@ -5,7 +5,7 @@
 #SBATCH --partition=defq
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=48
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --output=/var/scratch/skalra/elastoSLM/runs/E4smoke_%j.out
 set -uo pipefail
 source /var/scratch/skalra/elastoSLM/repo/slurm/common.sh

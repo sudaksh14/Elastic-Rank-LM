@@ -198,6 +198,7 @@ def main(args):
             train_utils.init_distributed_mode(args)
     print(args)
     os.makedirs('./saves/pruning_metadata', exist_ok=True)
+    os.makedirs('./saves/plots', exist_ok=True)   # plot_comparison_* write here
     os.makedirs(args.results_dir, exist_ok=True)
     level_results = {}
 

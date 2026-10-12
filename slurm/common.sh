@@ -12,6 +12,9 @@ export WANDB_DIR=$EROOT/cache/wandb
 export TMPDIR=${TMPDIR:-/var/scratch/skalra/tmp}
 mkdir -p "$HF_HOME" "$TORCH_HOME" "$XDG_CACHE_HOME" "$PIP_CACHE_DIR" "$WANDB_DIR" "$TMPDIR"
 export PYENV=/var/scratch/skalra/prune_llm      # py3.10, torch 2.7.0+cu126, tp 1.6.1, transformers 4.28.0
+# Environment every DAS-6 job needs: CUDA toolkit module + the project virtual env (prune_llm, py3.10)
+[ -f /etc/profile.d/modules.sh ] && source /etc/profile.d/modules.sh
+module load cuda12.1/toolkit/12.1
 source /var/scratch/skalra/minimonda3/etc/profile.d/conda.sh
 conda activate "$PYENV"
 export PYTHONPATH=$REPO/Elastoformer:$REPO/FlexRank/flexrank/src:$REPO/slurm/pyshim:${PYTHONPATH:-}:$EROOT/pylibs   # pylibs = extra pkgs (pytest...) kept OUT of the shared env

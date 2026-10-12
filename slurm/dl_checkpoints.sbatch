@@ -5,6 +5,7 @@
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=2
 #SBATCH --time=02:00:00
 #SBATCH --output=/var/scratch/skalra/elastoSLM/runs/dl_ckpt_%j.out
+source /var/scratch/skalra/elastoSLM/repo/slurm/common.sh   # CUDA module + venv; creates the run directory helpers
 set -euo pipefail
 # Published Elastoformer DeiT-B ladders, public SURFdrive share (README link), via WebDAV (no password).
 SHARE=BJ52qJHyWAYfwct; BASE=https://surfdrive.surf.nl/public.php/webdav

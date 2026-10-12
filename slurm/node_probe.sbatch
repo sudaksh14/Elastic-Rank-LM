@@ -5,6 +5,7 @@
 #SBATCH --exclusive
 #SBATCH --time=00:10:00
 #SBATCH --output=/var/scratch/skalra/elastoSLM/runs/node_probe_%j.out
+source /var/scratch/skalra/elastoSLM/repo/slurm/common.sh   # CUDA module + venv; creates the run directory helpers
 echo "host: $(hostname)  cpus: $(nproc)"
 echo "--- memory"; grep -E "MemTotal|MemAvailable" /proc/meminfo; echo "/dev/shm (RAM-backed):"; df -hT /dev/shm
 echo "--- mounts (type: nvme/ssd = local disk, nfs = network, tmpfs = RAM)"
