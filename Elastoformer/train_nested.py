@@ -41,6 +41,7 @@ class RankLevels(nn.Module):
 def build_rank_levels(args, base, sliced, nl, device):
     """DataSVD -> ODLinear (capped rank) -> FlexRank DP profiles matched to the pruning ladder's parameter totals."""
     from utils import flexrank_bridge as fb
+    from utils import budget as budget_mod
     from flexrank.profiles.dp import DPSearchAlgo
     from flexrank.profiles.utils import count_od_model_params
     N = args.pruning_steps
@@ -72,9 +73,11 @@ def build_rank_levels(args, base, sliced, nl, device):
         Fs = [len(sliced.idx(f"F{l}", L)) for l in range(nl)]
         target_total = fb.vit_macs_params(E, Qs, Fs, classes=base.config.num_labels)["params"]
         try:
-            dims, got = pdata.get_profile_for_params(target_total - nonod)
+            dims0, _ = pdata.get_profile_for_params(target_total - nonod)
         except ValueError:
-            dims, got = pdata.profiles[-1], pdata.params[-1]          # smallest DP profile if the budget is below the search range
+            dims0 = pdata.profiles[-1]                                 # smallest DP profile if the budget is below the search range
+        table = budget_mod.layer_cost_table(list(sol.layers_stats.keys()), sol.layers_stats, dict(rank_model.named_modules()))
+        dims, got = budget_mod.greedy_fill_to_budget(table, dims0, target_total - nonod)
         profiles[L] = [int(d) for d in dims]
         info[L] = dict(target_total_params=target_total, od_params=int(got), reached_total=int(got) + nonod)
     profiles[N + 1] = fb.full_profile(rank_model)                   # top mode = full CAPPED rank (cannot reproduce the dense model if r_cap<1)

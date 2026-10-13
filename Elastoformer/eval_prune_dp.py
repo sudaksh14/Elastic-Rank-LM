@@ -19,6 +19,7 @@ from models.elastoformer import ElasticViTForImageClassification, ElasticViTConf
 from models.sliced_vit import SlicedViT, build_level_indices
 from utils.nested_metadata import run_nested_pruning, make_importance
 from utils import flexrank_bridge as fb
+from utils import budget as budget_mod
 from flexrank.layers.base import ODLayer
 from flexrank.profiles.dp import DPSearchAlgo
 from flexrank.profiles.utils import count_od_model_params
@@ -159,9 +160,11 @@ def main():
             pdata = sol.to_profiles_data()
             budget = tot_uni["params"] - nongroup
             try:
-                dims, got = pdata.get_profile_for_params(budget)
+                dims0, _ = pdata.get_profile_for_params(budget)
             except ValueError:
-                dims, got = pdata.profiles[-1], pdata.params[-1]
+                dims0 = pdata.profiles[-1]
+            table = budget_mod.layer_cost_table(list(sol.layers_stats.keys()), sol.layers_stats, dict(gm.named_modules()))
+            dims, got = budget_mod.greedy_fill_to_budget(table, dims0, budget)   # use the unused budget (E5 under-spend fix)
             names = list(sol.layers_stats.keys())               # order == module traversal: gF.0..11 then gQ.0..11
             fs_dp, qs_dp = [int(d) for d in dims[:nl]], [int(d) for d in dims[nl:]]
             gm.set_sizes(fs_dp, qs_dp)

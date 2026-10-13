@@ -137,10 +137,12 @@ class SlicedViT(nn.Module):
 
 def slice_state_dict(sd, sliced, L):
     idx_fn = sliced.idx if hasattr(sliced, 'idx') else sliced   # SlicedViT or callable (tag, L) -> LongTensor
+    _dev = next(iter(sd.values())).device                       # index tensors must live where the weights live (GPU runs)
+    ix = lambda tag, L: idx_fn(tag, L).to(_dev)
     """State dict of the physically-sized Level-L model, sliced from the full weights (ALL blocks, incl. off-diagonal ones).
     Used (a) as an independent reference for the equivalence test, (b) to initialise 'corrected' frozen-prefix levels."""
     out = {}
-    e = idx_fn("E", L)
+    e = ix("E", L)
     for k, v in sd.items():
         if k.startswith("vit.embeddings.cls_token") or k.startswith("vit.embeddings.position_embeddings"):
             out[k] = v.index_select(2, e)
@@ -151,7 +153,7 @@ def slice_state_dict(sd, sliced, L):
         elif k.startswith("classifier"):
             out[k] = v.index_select(1, e) if k.endswith("weight") else v
         else:
-            l = int(k.split(".")[3]); q, f = idx_fn(f"Q{l}", L), idx_fn(f"F{l}", L)
+            l = int(k.split(".")[3]); q, f = ix(f"Q{l}", L), ix(f"F{l}", L)
             w = k.endswith("weight")
             if ".layernorm_" in k or k.endswith("output.dense.bias"):   # LN params and both output-dense biases live on E
                 out[k] = v.index_select(0, e)

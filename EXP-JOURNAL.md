@@ -16,13 +16,13 @@ Rules
 | ID | Title | Status | Depends on | Where | Est. GPU-h | Last update |
 |---|---|---|---|---|---|---|
 | E0 | Env build + CPU audit of pruning metadata / rebuild path | DONE | I-0, I-1 | DAS-6 fatq (CPU) | 0 | 2026-10-08 |
-| E1 | Reproduce Table 1 from published ckpts + nestedness audit | READY (queued, job 27712; resubmitted 2026-10-09 with exclusive node) | E0 | DAS-6 defq GPU | ≤1 | 2026-10-08 |
-| E2 | Training-free fronts: pruning vs rank, DP, r_max, additive error | READY (queued, job 27698) | I-2, I-3, E1 | DAS-6 defq GPU | 3–5 | 2026-10-08 |
-| E3 | B=1 kernel microbenchmark | READY (queued, job 27714) | I-0 | DAS-6 defq GPU | ≤0.5 | 2026-10-08 |
-| E4a | Frozen-prefix vs joint nested sampling (pilot) | READY (queued: smoke 27716, arms 27717-27723) | E0, I-4, I-5, I-6 | DAS-6 defq GPU | ~7 runs × 2–4 | 2026-10-08 |
+| E1 | Reproduce Table 1 from published ckpts + nestedness audit | DONE (2026-10-13) | E0 | DAS-6 defq GPU | ≤1 | 2026-10-08 |
+| E2 | Training-free fronts: pruning vs rank, DP, r_max, additive error | DONE (2026-10-13) | I-2, I-3, E1 | DAS-6 defq GPU | 3–5 | 2026-10-08 |
+| E3 | B=1 kernel microbenchmark | DONE (2026-10-13) | I-0 | DAS-6 defq GPU | ≤0.5 | 2026-10-08 |
+| E4a | Frozen-prefix vs joint nested sampling (pilot) | SMOKE RE-QUEUED (27786), arms 27787-27793 | E0, I-4, I-5, I-6 | DAS-6 defq GPU | ~7 runs × 2–4 | 2026-10-08 |
 | E4b | Frozen-prefix vs joint nested sampling (full ImageNet) | PLANNED | E4a | DAS-6 | 40–60 | 2026-10-06 |
-| E5 | DP per-layer ratio search, pruning axis | READY (training-free part queued, job 27715; trained part deferred to E4a gate) | E2, I-7, E4a | DAS-6 defq GPU | 3–6 | 2026-10-08 |
-| E6 | Rank-axis ViT, joint FlexRank training, capped r_max | READY (queued, jobs 27724-27726: r_cap 1.0/0.5/0.3) | E2, E3, E4a, I-8 | DAS-6 defq GPU | 3 × 3–5 | 2026-10-08 |
+| E5 | DP per-layer ratio search, pruning axis | RERUN QUEUED (27785, budget fill) | E2, I-7, E4a | DAS-6 defq GPU | 3–6 | 2026-10-08 |
+| E6 | Rank-axis ViT, joint FlexRank training, capped r_max | DONE (L2-L4); L1 infeasible | E2, E3, E4a, I-8 | DAS-6 defq GPU | 3 × 3–5 | 2026-10-08 |
 | E7 | Axis fork on Jetson (measured latency) | PLANNED | E4–E6, I-9 | Jetson | 0 (device) | 2026-10-06 |
 | E8 | FlexRank LM reproduction: GPT-2 → Llama-3.2-1B | PLANNED | I-0(b), I-10 | DAS-6 | 3 → 120 | 2026-10-06 |
 | E9 | LM diagnostics: additive error, TTFT/TPOT, KV reuse | PLANNED | E8 | DAS-6 | 3–6 | 2026-10-06 |
@@ -45,6 +45,11 @@ Rules
 | 2026-10-08 | **Finding C12:** `update_vit_weights_global` fills only shell×shell and core×core blocks of each rebuilt weight matrix. Off-diagonal blocks (shell rows × core cols and vice versa) keep random init (only 64-68% of a rebuilt FFN matrix equals the pretrained slice, tiny-model test). Joint training starts from the full pretrained matrices, so an unmodified F arm vs J would not be a fair init comparison. E4a therefore runs F-faithful (paper) AND F-corrected (all blocks, cls/pos from pretrained slice; `slice_state_dict`) | tests/test_sliced_equivalence.py | analysis |
 | 2026-10-08 | I-5 done: `models/sliced_vit.py` (SlicedViT) equals physically sized models at every level (max logit diff < 6e-7, two configs, CPU) | tests/test_sliced_equivalence.py | analysis |
 | 2026-10-09 | DAS-6 rule: one job owns a whole node (`#SBATCH --exclusive` in every batch script). Loader: persistent workers + prefetch 4; mixup moved to GPU; data-wait % logged per run (`data_wait_frac`). Workers raised to 32 for E4a/E6 on the exclusive node. Node probe 27711 (RAM vs SSD, NFS vs local speed) pending: local staging is NOT enabled until it reports | user + analysis | user |
+| 2026-10-13 | GPU results count only after the cuda12.1 module + prune_llm env. Earlier runs that show device cpu are CPU runs and are not GPU results. | job logs | analysis |
+| 2026-10-13 | No rank-vs-pruning claim until budgets are matched (E5 fix) and a matched E4a pruning arm exists. | E6 vs E1 comparison | analysis |
+| 2026-10-13 | E6 level 1 (3.6 M) declared infeasible for the rank axis at fixed residual width: fixed parts use ~1.55 M and minimum widths still exceed the budget. | train_nested build_rank_levels (reached_total > target) | analysis |
+| 2026-10-13 | DP budget fill (utils/budget.py) added to E5 and E6 profile construction; E5 rerun queued to verify on GPU. | E5 under-spend | analysis |
+| 2026-10-13 | slice_state_dict moves index tensors to the weights' device (fixes corrected-init on GPU). Verify with the smoke test before the E4a arms count. | smoke 27750 traceback | analysis |
 | — | Frozen baseline variant for E4: faithful / corrected / both. E0 shows cls/pos are NOT carried into rebuilt levels (F arm "faithful" inherits that) | E0 | user |
 
 ---
@@ -120,7 +125,7 @@ Rules
 - **Next experiment:** E1 (running).
 
 ### E1 — Reproduce Elastoformer Table 1 from published checkpoints + nestedness audit
-- **Status:** READY (queued, pending GPU)
+- **Status:** DONE (2026-10-13)
 - **Date:** queued 2026-10-08 as job 27682 (defq, 1 GPU, 4 h limit, all three CRs sequentially). CPU jobs 27678-27680 were cancelled after ~52 min on the user's rule that GPU-needing work is never run on CPU nodes; their partial output is not used.
 - **Hypothesis:** Published Level-1…6 checkpoints reproduce Table 1 Top-1 within ±0.3 pp (CR=0.8 targets: 51.19 /
   64.14 / 69.97 / 72.46 / 73.61 / 74.65; CR=0.6: 72.45 / 74.22 / 75.26 / 75.79 / 76.09 / 76.41; CR=0.4: 79.95 / 80.13 /
@@ -131,17 +136,17 @@ Rules
 - **Hardware:** DAS-6 defq, 1 GPU (A40/A10, whichever frees first); node205-208 currently held by another user's jobs
 - **Dataset:** ImageNet-1k val (50k)
 - **Settings:** DeiT-B, checkpoints from the SURFdrive release downloaded to `/var/scratch/skalra/elastoSLM/checkpoints/deitb_cr{0.4,0.6,0.8}` (job 27674, 18 files, SHA256SUMS.txt); eval transform resize 256 / crop 224, bicubic
-- **Result:** pending. Smoke test (job 27677, 256 val images, CR0.8, L1+L6): rebuilt GFLOPs 0.60 / 16.86 = paper exactly; top-1 48.8 / 71.5 vs paper 51.19 / 74.65 (n=256, noise ≈ ±3 pp, not evidence either way). Published CR0.8 Level-1 dims are 152/96/608 (embed/qkv/ffn); the current code's core is 153/144/614, so the released checkpoints came from a slightly different code version.
+- **Result:** All 18 levels reproduce Table 1 within 0.30 pp, all slightly below the paper (median -0.2 pp). FLOPs match exactly. Passes the +/-0.3 pp criterion; worst case CR 0.8 L2 63.84 vs 64.14. Source: E1_20261012_c600c2f-dirty_112151/results.json (complete). The untagged E1_20261012_c600c2f-dirty folder is an incomplete copy (CR 0.8 L6 missing). Nestedness by value containment: patch-embed, Q and FFN weights = 1.00 across levels; cls_token = 0.00 and position embeddings ~0.00, so they are not carried across levels (confirms C3 on the published checkpoints). Eval throughput ~200 img/s.
 - **Metrics:** Top-1/Top-5, params, MACs per level; per-tensor nestedness deltas
 - **Logs/checkpoint paths:** —
-- **What worked:** —
-- **What failed:** —
-- **Interpretation:** —
-- **Decision:** —
-- **Next experiment:** E2
+- **What worked:** Eval pipeline reproduces the published numbers and the FLOPs exactly. Checkpoints load strictly into the rebuilt architecture.
+- **What failed:** First attempt (job 27712) failed: CUDA not visible inside the job (fixed by the cuda12.1 module, see slurm/common.sh).
+- **Interpretation:** The released checkpoints match Table 1 with a small, consistent negative offset of about 0.2 pp, most likely an eval-transform detail (not verified). Encoder weights are nested by value; the position/cls embedding is not.
+- **Decision:** Accept E1 as the reference reproduction within tolerance. Report the ~0.2 pp offset in any paper comparison.
+- **Next experiment:** E2 (done), E4a frozen-arm reference.
 
 ### E2 — Training-free Pareto fronts: pruning vs rank, uniform vs DP, r_max, additive error
-- **Status:** READY (queued, job 27713; includes an in-job real-data smoke that aborts on failure)
+- **Status:** DONE (2026-10-13)
 - **Date:** queued 2026-10-08
 - **Hypothesis:** Full-rank SVD/DataSVD reproduces base accuracy (S1). DataSVD ≥ SVD and DP ≥ uniform at matched params.
   Additive-error Spearman ρ at ViT-B is reported (no prior expectation beyond FlexRank's 4-layer MNIST check).
@@ -151,17 +156,17 @@ Rules
 - **Dataset:** ImageNet-1k train (4,096 random-image calib set, seed 0, index list saved next to the cached fp16 tensor in `/var/scratch/skalra/elastoSLM/data_lists/`; first 1,024 used for DP probing and the additive check) + val (fixed class-balanced 10k subset for the rank arm; full 50k for the pruning ladders)
 - **Settings:** prune: L1, CR {0.4,0.6,0.8}, N=5, no FT. Rank: 72 encoder Linears, {SVD, DataSVD} × {uniform, DP} ×
   r_max/min(m,n) {1.0, 0.5, 0.3}; 30 random profiles for the additive-error check
-- **Result:** —
+- **Result:** Job 27748 completed on GPU. Untrained pruning ladders: top-1 0.1-7% at every level below the full model (81.73%). Untrained rank, capped, DataSVD: cap 1.0 81.5% at 73.0 M; cap 0.5 79.6% at 54.7 M; cap 0.3 66.4% at 36.1 M (SVD at cap 0.3: 54.4%). S1: top-1 81.74 = base, but max abs logit diff 0.0099 (planned threshold 1e-3 not met; top-1 identical, likely TF32 on GPU, not verified). S4: analytic params 86,567,656 = actual. Additive-error check (30 random profiles, 1,024 probe images): Spearman 0.09, Kendall 0.07.
 - **Metrics:** Top-1 vs params/MACs/storage; calib loss; ρ, τ
 - **Logs/checkpoint paths:** —
-- **What worked:** —
-- **What failed:** —
-- **Interpretation:** —
-- **Decision:** —
-- **Next experiment:** E4a (recipe), E5/E6 (profiles, r_max)
+- **What worked:** Clean no-consolidation baseline for both axes. DataSVD beats SVD at every capped budget (+12 pp at cap 0.3).
+- **What failed:** Additive-error assumption not supported at ViT-B scale (rho ~0.1). The S1 logit-difference check misses its 1e-3 threshold.
+- **Interpretation:** Without training, pruning collapses below ~70% of parameters, while DataSVD low-rank degrades gracefully down to cap ~0.5. DP and uniform allocation show no consistent advantage here. The additive check is noisy (probe losses differ by small amounts), so treat rho as indicative only.
+- **Decision:** Keep DataSVD as the rank decomposition. Treat the DP allocation as unvalidated (RQ5 open). Re-run S1 with TF32 disabled before paper numbers. Increase probe size for the additive check.
+- **Next experiment:** E6 (trained rank, done). E9 additive re-check with more probe images.
 
 ### E3 — B=1 kernel microbenchmark (datacenter proxy)
-- **Status:** READY (queued, job 27714)
+- **Status:** DONE (2026-10-13)
 - **Date:** queued 2026-10-08
 - **Hypothesis:** For ViT-B prefill shapes, two-GEMM low-rank beats matched-param dense-pruned only below
   r/min ≈ 0.3–0.4. For LM decode shapes, latency tracks bytes read.
@@ -170,17 +175,17 @@ Rules
 - **Hardware:** DAS-6 defq, 1 GPU (A40 or A10; record which: it changes the crossover)
 - **Dataset:** synthetic tensors
 - **Settings:** shapes per plan §5 E3; dense / dense-pruned / sliced / GAR / materialised; fp16, bf16; CUDA graphs on/off
-- **Result:** —
+- **Result:** Job 27747, A40, fp16, CUDA graphs on/off. Single token (M=1, CUDA graphs): two-GEMM low-rank is faster than dense for ranks up to ~0.5 on large shapes. 2048x8192: dense 79.9 us; low-rank r=0.3 42.0 us, r=0.5 54.3 us, full rank 103.4 us. 8192x2048: dense 75.8 us; low-rank 41.0 / 60.4 / 108.5 us. Parameter-matched dense pruning equals low-rank (2048x8192 r=0.3: 41.0 vs 42.0 us). GAR beats the two-GEMM at full rank (90-93 vs 103-108 us). Prefill (M=197, no graphs): low-rank is 1.2-1.5x slower than dense at r=0.3-0.5 for 768x3072. Small 2048x512 is launch-bound (~20 us floor).
 - **Metrics:** median/p90 latency, crossover rank
 - **Logs/checkpoint paths:** —
-- **What worked:** —
-- **What failed:** —
-- **Interpretation:** —
-- **Decision:** —
-- **Next experiment:** E6 constraints / E7 priority
+- **What worked:** Single-token low-rank beats dense for large shapes at ranks up to ~0.5, the bandwidth-bound regime that the brainstorm expected to favour low rank.
+- **What failed:** Not measured on Jetson (edge). One run per cell, noise ~2-3 us. Small shapes are dominated by launch overhead.
+- **Interpretation:** Contrary to the brainstorm's B=1 concern, low rank helps decode on A40 at moderate ranks. But parameter-matched dense pruning is as fast, so on speed alone the rank axis does not beat structured pruning here.
+- **Decision:** Use the CUDA-graph rows for kernel comparisons. Edge claims need the Jetson measurement (E7).
+- **Next experiment:** E7 on Jetson before any edge claim.
 
 ### E4a — Frozen-prefix vs joint nested sampling (pilot, pruning axis)
-- **Status:** READY (all jobs pending GPU; `afterok` gated on the GPU smoke test 27690)
+- **Status:** RUNNING QUEUE (2026-10-13): smoke test 27786 re-queued after the device fix; 7 arms (27787-27793) gated on it
 - **Date:** queued 2026-10-08
 - **Hypothesis:** At matched compute, joint nested sampling (J) beats frozen-prefix growth (F). At CR=0.8: ≥ +2.0 pp
   mean Top-1 over levels and no level worse than −0.5 pp. At CR=0.5: J ≥ F − 0.3 pp everywhere. KD ≥ CE.
@@ -190,14 +195,14 @@ Rules
 - **Hardware:** DAS-6, multi-GPU DDP (TBD)
 - **Dataset:** 10% class-balanced ImageNet-1k train subset (list hashed), full val
 - **Settings:** 7 runs: F-faithful, F-corrected (C12) and J at CR 0.5 and 0.8, plus J+KD at CR 0.8. N=3 (4 levels); 1 seed; pretrained DeiT-B init; same L1 index sets. Common: 10% class-balanced train subset (seed 0, list saved), batch 128, AdamW lr 5e-5, fp16 AMP + GradScaler, grad-clip 1.0, timm Mixup/CutMix with label smoothing 0.11 (module-level, same object in both arms), no EMA, no repeated-aug sampler, **no stochastic depth in F** (J has none), warmup 1 epoch. F: core wd 0.05 then 0; J: wd 0. Sampler uniform (one level per step). Hyper-parameters are copied from the README recipe, not tuned for either arm
-- **Result:** —
+- **Result:** Smoke test of 2026-10-12 (job 27750): F-faithful passed; F-corrected failed on CPU/CUDA index mismatch (fixed in models/sliced_vit.py, not yet re-tested on GPU); both joint arms completed (smoke data only). No E4a arm has run yet.
 - **Metrics:** Top-1 per level, mean over levels, acc–MACs AUC, GPU-h and img/s per arm, sampler coverage, frozen-hash check
 - **Logs/checkpoint paths:** —
-- **What worked:** —
-- **What failed:** —
-- **Interpretation:** —
-- **Decision:** —
-- **Next experiment:** E4b if success; ablations A1/A9/A2 if J≈F; E6 if J<F
+- **What worked:** Joint nested training loop runs end to end on the GPU, and the samplers behave as designed.
+- **What failed:** F-corrected device mismatch (fixed 2026-10-13, awaiting the smoke test).
+- **Interpretation:** Pending the smoke test. No accuracy claims yet.
+- **Decision:** Arms run only if the smoke test passes (afterok). If the corrected-init arm fails again, run the other six arms and fix that one separately.
+- **Next experiment:** Read 27786 result; then the E4a results (7 arms, ~3-6 h each, 12 h limit).
 
 ### E4b — Frozen-prefix vs joint nested sampling (full ImageNet-1k)
 - **Status:** PLANNED
@@ -218,7 +223,7 @@ Rules
 - **Next experiment:** E5, E6
 
 ### E5 — DP per-layer ratio search for the pruning axis
-- **Status:** READY for the training-free comparison (job 27706, in-job smoke first). The trained comparison (DP profiles through `train_nested.py`) is NOT built: it needs nested DP profiles and depends on E4a deciding the schedule.
+- **Status:** RERUN QUEUED (job 27785) with budget fill; the 2026-10-12 run stays as the record of the unfixed version
 - **Date:** queued 2026-10-08
 - **Hypothesis:** DP-allocated internal-dim ratios beat the uniform linear schedule at matched params (≥ +1.0 pp
   training-free at ≥3 of the lowest 4 levels; ≥ +0.5 pp after training). Activation-aware importance ≥ L1.
@@ -227,17 +232,17 @@ Rules
 - **Hardware:** DAS-6
 - **Dataset:** as E2 / E4a
 - **Settings:** CR 0.8, N=5 targets; residual width uniform; internal dims (FFN intermediate, QKV head-dims) per layer
-- **Result:** —
+- **Result:** Previous run (27749, unfixed): DP profiles were not budget-matched (e.g. CR 0.8 L5: budget 61.0 M, DP 37.3 M), so DP-vs-uniform is not a valid comparison. Uniform-with-same-ranking matches the pruning ladder (sanity check). Fix: utils/budget.py greedy fill, one width unit at a time with probe-based errors; tiny-model CPU test gives <0.1% gap at every level. Rerun will confirm on GPU.
 - **Metrics:** Top-1 per level at matched params (untrained, trained)
 - **Logs/checkpoint paths:** —
-- **What worked:** —
-- **What failed:** —
-- **Interpretation:** —
-- **Decision:** —
-- **Next experiment:** E6 / F1
+- **What worked:** Uniform-with-same-ranking sanity check matches the pruning ladder.
+- **What failed:** DP under-spent the budget (coarse front). Previous result is not used for claims.
+- **Interpretation:** Rerun decides whether DP allocation helps once budgets match.
+- **Decision:** Judge DP vs uniform only from the rerun, and only where parameter gaps are < 1%.
+- **Next experiment:** Read 27785 result (uniform vs DP at matched params per level).
 
 ### E6 — Rank-axis ViT with joint FlexRank training and capped r_max
-- **Status:** READY (queued: jobs 27703/27704/27705 for r_cap 1.0/0.5/0.3; each runs an in-job smoke first)
+- **Status:** DONE for L2-L4 (full runs 2026-10-12/13); L1 declared INFEASIBLE at fixed residual width (2026-10-13 decision)
 - **Date:** queued 2026-10-08
 - **Hypothesis:** At matched params, nested low-rank (DataSVD + DP + KD, joint) beats the best pruning-axis joint
   model at ≥4/6 levels, with stored params ≤ 1.0× dense at r_max=0.5.
@@ -246,14 +251,14 @@ Rules
 - **Hardware:** DAS-6
 - **Dataset:** as E4a
 - **Settings:** r_cap {1.0, 0.5, 0.3} of min(in,out); DataSVD (4,096 calib images, Gram matrices); DP over 72 encoder Linears (12 cuts, min_p 0.02, 1,024 probe images); uniform sampler; KD from the frozen dense DeiT-B (kl=1). Params follow FlexRank's GAR accounting; stored params are reported separately. With r_cap<1 the top mode cannot reproduce the dense model
-- **Result:** —
+- **Result:** Wall time 6.2-10.0 h per run (within 14 h limits); data wait 3-4%, so GPU-bound. Top-1 per level (val 50k), params M: r_cap 1.0: L1 10.96 (3.56), L2 64.11 (18.8), L3 78.29 (45.1), L4 81.17 (86.6; base 81.74). r_cap 0.5: L1 11.38 (3.63), L2 68.65 (18.7), L3 80.19 (46.4), L4 80.77 (54.7). r_cap 0.3: L1 12.55 (3.61), L2 70.65 (19.0), L3 78.76 (36.1), L4 78.76 (36.1). Top mode at r_cap 0.3 equals L3 because the cap limits the model to 36.1 M.
 - **Metrics:** Top-1 per level; stored MB; params; MACs; predicted latency (E3)
 - **Logs/checkpoint paths:** —
-- **What worked:** —
-- **What failed:** —
-- **Interpretation:** —
-- **Decision:** —
-- **Next experiment:** E7
+- **What worked:** Joint nested low-rank training works. The full capped rank keeps 81.2% (base 81.7%). At 45 M it reaches 78-80%, against ~72% for the E1 pruning ladder at 39-59 M. Training adds about +12 pp over untrained rank at cap 0.3 (66.4% at 36 M in E2 -> 78.8% trained).
+- **What failed:** Smallest level (3.6 M) collapses to 11-13%. Cause: the rank model keeps residual width 768, so its fixed parts (classifier 0.77 M, patch embedding ~0.6 M, layer norms) use ~1.55 M of the 3.6 M budget; with every width at its minimum it is still over budget (train_nested now reports reached_total > target_total). At cap 0.3 the top mode duplicates L3 (both 36.1 M).
+- **Interpretation:** Rank training is strong at mid and large budgets. L1 is not a fair point for the rank axis; it compares a fixed-width model against a pruning ladder that also shrinks the residual width. Comparison with E1 is not like-for-like (training budget, data, KD).
+- **Decision:** Do not rerun E6 for L2-L4: the budget gaps there were <= 2% and the budget fill changes little. Drop L1 from rank-axis comparisons, or compare at >= 10 M. Do not claim rank beats pruning until the matched E4a pruning arm exists.
+- **Next experiment:** Matched E4a J arm (pruning, same recipe) as the like-for-like baseline for E6 at 19 M and 45 M.
 
 ### E7 — Axis fork on Jetson (measured latency)
 - **Status:** PLANNED
@@ -342,3 +347,19 @@ Rules
 
 ### F4 — Final serving properties
 - **Status:** PLANNED — scope fixed after E9 (plan §8).
+
+---
+
+## Next steps
+
+Updated 2026-10-13. Each item says what to do, what to check, and what result changes the plan. The full analysis is in [INSIGHTS-AND-ANALYSIS.md](INSIGHTS-AND-ANALYSIS.md).
+
+1. **Smoke test 27786 (E4 corrected-init fix).** Check: both F arms finish and write results; the joint arms finish. If it fails, fix the traceback before anything else; the E4a arms are cancelled automatically.
+2. **E4a arms 27787-27793 (pilot, pruning axis).** Check: per-level top-1 for F, Fc, J (CR 0.8 and 0.5), and JKD (CR 0.8). Decision: if J beats F by >= 2 pp mean at CR 0.8 with no level worse by > 0.5 pp, go to E4b (needs approval, ~40-60 GPU-h). If not, test A1/A9 before concluding.
+3. **E5 rerun 27785 (DP vs uniform, budget-matched).** Check: parameter gap per level < 1%; DP vs uniform top-1 at matched budgets. Decision: if DP wins at >= 3 of 4 levels, adopt DP profiles for E4a-style training; otherwise keep uniform.
+4. **Matched pruning baseline for E6.** Run the E4a J recipe at the budgets used by E6 (19 M and 45 M). Purpose: like-for-like comparison of rank vs pruning. No job submitted yet; needs a go-ahead.
+5. **S1 TF32 check (E2).** Rerun the full-rank DataSVD logit comparison with TF32 disabled. Expect max logit diff < 1e-3. Short job.
+6. **Additive-error re-check (E2/E9).** Repeat the 30-profile additive check with 5,000 probe images to see whether rho stays near 0.
+7. **Node storage (data staging).** Waiting for the user's instruction. Facts: /local is not writable by users; /dev/shm is 63 GB of RAM on GPU nodes.
+8. **Jetson measurement (E7).** Needs device access. Required before any edge claim.
+9. **Commit and push** after every result update (this journal, INSIGHTS-AND-ANALYSIS.md, and any code change).
