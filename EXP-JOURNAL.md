@@ -19,9 +19,9 @@ Rules
 | E1 | Reproduce Table 1 from published ckpts + nestedness audit | DONE (2026-10-13) | E0 | DAS-6 defq GPU | ≤1 | 2026-10-08 |
 | E2 | Training-free fronts: pruning vs rank, DP, r_max, additive error | DONE (2026-10-13) | I-2, I-3, E1 | DAS-6 defq GPU | 3–5 | 2026-10-08 |
 | E3 | B=1 kernel microbenchmark | DONE (2026-10-13) | I-0 | DAS-6 defq GPU | ≤0.5 | 2026-10-08 |
-| E4a | Frozen-prefix vs joint nested sampling (pilot) | SMOKE RE-QUEUED (27786), arms 27787-27793 | E0, I-4, I-5, I-6 | DAS-6 defq GPU | ~7 runs × 2–4 | 2026-10-08 |
+| E4a | Frozen-prefix vs joint nested sampling (pilot) | DONE (2026-10-14): J beats F at CR 0.5/0.8 | E0, I-4, I-5, I-6 | DAS-6 defq GPU | ~7 runs × 2–4 | 2026-10-08 |
 | E4b | Frozen-prefix vs joint nested sampling (full ImageNet) | PLANNED | E4a | DAS-6 | 40–60 | 2026-10-06 |
-| E5 | DP per-layer ratio search, pruning axis | RERUN QUEUED (27785, budget fill) | E2, I-7, E4a | DAS-6 defq GPU | 3–6 | 2026-10-08 |
+| E5 | DP per-layer ratio search, pruning axis | DONE (2026-10-14): fill works; training-free test uninformative | E2, I-7, E4a | DAS-6 defq GPU | 3–6 | 2026-10-08 |
 | E6 | Rank-axis ViT, joint FlexRank training, capped r_max | DONE (L2-L4); L1 infeasible | E2, E3, E4a, I-8 | DAS-6 defq GPU | 3 × 3–5 | 2026-10-08 |
 | E7 | Axis fork on Jetson (measured latency) | PLANNED | E4–E6, I-9 | Jetson | 0 (device) | 2026-10-06 |
 | E8 | FlexRank LM reproduction: GPT-2 → Llama-3.2-1B | PLANNED | I-0(b), I-10 | DAS-6 | 3 → 120 | 2026-10-06 |
@@ -50,6 +50,12 @@ Rules
 | 2026-10-13 | E6 level 1 (3.6 M) declared infeasible for the rank axis at fixed residual width: fixed parts use ~1.55 M and minimum widths still exceed the budget. | train_nested build_rank_levels (reached_total > target) | analysis |
 | 2026-10-13 | DP budget fill (utils/budget.py) added to E5 and E6 profile construction; E5 rerun queued to verify on GPU. | E5 under-spend | analysis |
 | 2026-10-13 | slice_state_dict moves index tensors to the weights' device (fixes corrected-init on GPU). Verify with the smoke test before the E4a arms count. | smoke 27750 traceback | analysis |
+| 2026-10-14 | Smoke 27786 passed (both F arms and both joint arms, rc=0): the corrected-init device fix works on GPU. | job 27786 | analysis |
+| 2026-10-14 | E4a pilot: joint nested training (J) beats the corrected frozen-prefix arm (Fc) by +9.5 pp mean at CR 0.8 and +12.9 pp at CR 0.5. The strict pre-registered criteria are NOT met: at CR 0.8 L1 is -1.0 pp (both at chance) and L4 is -0.5 pp; at CR 0.5 L4 is -1.2 pp vs Fc. The gain is concentrated at the small and middle levels; the top level is equal or slightly better for frozen-prefix. Report as supported, with that exception. | E4a results | analysis |
+| 2026-10-14 | F-faithful is not a usable baseline: its top level reaches only 14.6% (CR 0.8) and 27.3% (CR 0.5) because off-diagonal blocks and cls/pos are random (C12). Use Fc as the baseline in all claims; report F-faithful only as the published pipeline. | E4a results | analysis |
+| 2026-10-14 | KD (JKD) beats CE (J) at CR 0.8: +1.7 pp mean, +1.9 pp at the top level. KD costs 1.5x wall time (3.9 h vs 2.5 h) because of the teacher forward. | E4a results | analysis |
+| 2026-10-14 | Rank vs pruning at similar budgets (E6 vs E4a JKD, both 10% subset, 40 level-epochs, KD, uniform sampler): rank leads by +30 to +37 pp at 19 M and +4.5 to +6.4 pp at 46 M. Both collapse at 3.6 M. Single seed; confirm identical hyper-parameters before using it in a paper. | E4a JKD vs E6 | analysis |
+| 2026-10-14 | E5 rerun: budget fill closes the parameter gap (<0.01% at all 10 level/CR points). Training-free top-1 is at chance for levels 1-4 (0.1-0.4%), so DP vs uniform cannot be decided without training. DP lowers validation loss at all 10 points but wins top-1 only at level 5. The pre-registered rule (+1 pp at >=3 of the lowest 4 levels) is not met, and not testable. Next: train DP profiles (E5b). | E5 results | analysis |
 | — | Frozen baseline variant for E4: faithful / corrected / both. E0 shows cls/pos are NOT carried into rebuilt levels (F arm "faithful" inherits that) | E0 | user |
 
 ---
@@ -185,24 +191,31 @@ Rules
 - **Next experiment:** E7 on Jetson before any edge claim.
 
 ### E4a — Frozen-prefix vs joint nested sampling (pilot, pruning axis)
-- **Status:** RUNNING QUEUE (2026-10-13): smoke test 27786 re-queued after the device fix; 7 arms (27787-27793) gated on it
-- **Date:** queued 2026-10-08
+- **Status:** DONE (2026-10-14). Smoke 27786 passed; all 7 arms (27787-27793) finished.
+- **Date:** queued 2026-10-08; run 2026-10-13/14
 - **Hypothesis:** At matched compute, joint nested sampling (J) beats frozen-prefix growth (F). At CR=0.8: ≥ +2.0 pp
   mean Top-1 over levels and no level worse than −0.5 pp. At CR=0.5: J ≥ F − 0.3 pp everywhere. KD ≥ CE.
-- **Code/config commit:** `beab276-dirty` (`Elastoformer/train_nested.py`, `models/sliced_vit.py`, `main.py` flags `--train_subset/--corrected_init/--eval_every/--results_dir`, `trainer.py --eval_every`, `slurm/e4_smoke.sbatch`, `slurm/e4a_run.sbatch`, `slurm/submit_e4a.sh`)
-- **Command:** see plan §5 E4a (`main.py … --pruning_steps 3 --core_epochs 10 --epochs 10 --train_subset 0.1` vs
-  `train_nested.py … --total_epochs 40 --train_subset 0.1`)
-- **Hardware:** DAS-6, multi-GPU DDP (TBD)
-- **Dataset:** 10% class-balanced ImageNet-1k train subset (list hashed), full val
-- **Settings:** 7 runs: F-faithful, F-corrected (C12) and J at CR 0.5 and 0.8, plus J+KD at CR 0.8. N=3 (4 levels); 1 seed; pretrained DeiT-B init; same L1 index sets. Common: 10% class-balanced train subset (seed 0, list saved), batch 128, AdamW lr 5e-5, fp16 AMP + GradScaler, grad-clip 1.0, timm Mixup/CutMix with label smoothing 0.11 (module-level, same object in both arms), no EMA, no repeated-aug sampler, **no stochastic depth in F** (J has none), warmup 1 epoch. F: core wd 0.05 then 0; J: wd 0. Sampler uniform (one level per step). Hyper-parameters are copied from the README recipe, not tuned for either arm
-- **Result:** Smoke test of 2026-10-12 (job 27750): F-faithful passed; F-corrected failed on CPU/CUDA index mismatch (fixed in models/sliced_vit.py, not yet re-tested on GPU); both joint arms completed (smoke data only). No E4a arm has run yet.
-- **Metrics:** Top-1 per level, mean over levels, acc–MACs AUC, GPU-h and img/s per arm, sampler coverage, frozen-hash check
-- **Logs/checkpoint paths:** —
-- **What worked:** Joint nested training loop runs end to end on the GPU, and the samplers behave as designed.
-- **What failed:** F-corrected device mismatch (fixed 2026-10-13, awaiting the smoke test).
-- **Interpretation:** Pending the smoke test. No accuracy claims yet.
-- **Decision:** Arms run only if the smoke test passes (afterok). If the corrected-init arm fails again, run the other six arms and fix that one separately.
-- **Next experiment:** Read 27786 result; then the E4a results (7 arms, ~3-6 h each, 12 h limit).
+- **Code/config commit:** `4713f65-dirty` (run dirs carry this SHA). Code: `Elastoformer/train_nested.py`, `models/sliced_vit.py`, `main.py` flags `--train_subset/--corrected_init/--eval_every/--results_dir`, `slurm/e4_smoke.sbatch`, `slurm/e4a_run.sbatch`, `slurm/submit_e4a.sh`
+- **Command:** `slurm/submit_e4a.sh` (smoke 27786, then arms 27787-27793 afterok). F/Fc: `main.py … --pruning_steps 3 --core_epochs 10 --epochs 10 --train_subset 0.1` (Fc adds `--corrected_init`). J/JKD: `train_nested.py … --sampler uniform --loss ce|kd --total_level_epochs 40 --batch_size 128 --warmup_epochs 1`
+- **Hardware:** DAS-6, exclusive nodes. J/JKD on 2×A40 (J 559 img/s, JKD 367 img/s); F arms on A10 nodes.
+- **Dataset:** 10% class-balanced ImageNet-1k train subset (seed 0, list saved), full 50k val
+- **Settings:** 7 runs: F-faithful, F-corrected (Fc, C12) and J at CR 0.5 and 0.8, plus JKD at CR 0.8. N=3 (4 levels); 1 seed; pretrained DeiT-B init; same L1 index sets; AdamW lr 5e-5, fp16 AMP, mixup/cutmix; hyper-parameters copied from the README recipe, not tuned for either arm.
+- **Result (val top-1 %, 50k; levels L1 / L2 / L3 / L4):**
+
+| CR | Level params (M) | F (faithful) | Fc (corrected) | J (CE) | JKD (KD) |
+|---|---|---|---|---|---|
+| 0.8 | 3.64 / 19.05 / 46.54 / 86.57 | 1.52 / 6.10 / 10.76 / 14.58 (mean 8.24) | 1.50 / 8.42 / 55.16 / 80.21 (mean 36.32) | 0.47 / 30.99 / 71.93 / 79.71 (mean 45.78) | 0.74 / 33.67 / 73.82 / 81.59 (mean 47.46) |
+| 0.5 | 22.05 / 38.64 / 60.22 / 86.57 | 16.31 / 19.85 / 23.81 / 27.32 (mean 21.82) | 16.54 / 50.62 / 75.10 / 80.80 (mean 55.77) | 49.75 / 69.31 / 76.16 / 79.57 (mean 68.70) | not run |
+
+  J − Fc, CR 0.8: −1.03 / +22.57 / +16.77 / −0.50 (mean +9.46). JKD − Fc, CR 0.8: −0.76 / +25.25 / +18.66 / +1.38 (mean +11.14). J − Fc, CR 0.5: +33.21 / +18.69 / +1.06 / −1.23 (mean +12.93). JKD − J, CR 0.8: +0.27 / +2.68 / +1.89 / +1.88 (mean +1.68). Base DeiT-B 81.80. Sampler coverage is uniform (about 10,000 steps per level).
+  Wall time: J 2.5 h (CR 0.8) and 2.6 h (CR 0.5); JKD 3.9 h; F arms about 5.3 h.
+- **Metrics:** Top-1 per level, mean over levels, img/s, data wait (3.6-5.4%, so GPU-bound), sampler coverage.
+- **Logs/checkpoint paths:** `/var/scratch/skalra/elastoSLM/runs/E4a_{F,Fc,J}_cr{0.5,0.8}_20261013_4713f65-dirty`, `…/E4a_JKD_cr0.8_…`; Slurm logs `runs/E4a_27787..27793.out`. Checkpoints in each `ckpt/`.
+- **What worked:** The whole pipeline ran end to end. Joint training learns levels that frozen-prefix cannot: at CR 0.8, L2 is 31-34% (J/JKD) against 8.4% (Fc), and at CR 0.5, L1 is 49.8% against 16.5%. KD adds +1.7 pp mean.
+- **What failed:** (1) The strict pre-registered criteria are not met (see Decision log): L1 at CR 0.8 and L4 at CR 0.5 miss. (2) L1 at CR 0.8 (3.6 M) does not train in any arm (J loss stays near 6.85, close to ln 1000; top-1 0.5-1.5%). (3) F-faithful is crippled at the top level (14.6% / 27.3%).
+- **Interpretation:** Frozen-prefix growth trains each shell once and then never revisits the shared core, so smaller levels are stuck with what was learned early; joint sampling keeps every level adapting. The cost is a small drop at the full model (−0.5 to −1.2 pp vs Fc), plausibly because J spends only a quarter of its steps on L4 while Fc's last stage trains L4 alone (not tested). At CR 0.5 the L3 gap is small (+1.1 pp), so the advantage shrinks when levels are close in size. Caveats: one seed, 10% data, hyper-parameters not tuned for either arm, F arms use a different pipeline (`main.py`) and A10 GPUs, so "matched compute" is by epochs, not measured FLOPs.
+- **Decision:** Treat J ≫ Fc as supported on the pruning axis, with the top-level exception noted. Do not run E4b yet (needs approval): first decide how to fix the L4 gap and the L1 collapse, since those change the E4b recipe. Use Fc, not F-faithful, as the baseline everywhere.
+- **Next experiment:** E4a follow-up: weighted or sandwich sampler (more steps on L4), a higher-lr or longer L1 test, JKD at CR 0.5; then E4b.
 
 ### E4b — Frozen-prefix vs joint nested sampling (full ImageNet-1k)
 - **Status:** PLANNED
@@ -223,23 +236,37 @@ Rules
 - **Next experiment:** E5, E6
 
 ### E5 — DP per-layer ratio search for the pruning axis
-- **Status:** RERUN QUEUED (job 27785) with budget fill; the 2026-10-12 run stays as the record of the unfixed version
-- **Date:** queued 2026-10-08
+- **Status:** DONE (2026-10-14), rerun 27785 with budget fill. The 2026-10-12 run (27749) stays as the record of the unfixed version.
+- **Date:** queued 2026-10-08; rerun 2026-10-13
 - **Hypothesis:** DP-allocated internal-dim ratios beat the uniform linear schedule at matched params (≥ +1.0 pp
   training-free at ≥3 of the lowest 4 levels; ≥ +0.5 pp after training). Activation-aware importance ≥ L1.
-- **Code/config commit:** `beab276-dirty` (`Elastoformer/eval_prune_dp.py`, `slurm/e5_run.sbatch`). FlexRank's DP is reused unchanged by wrapping each prunable width group as an `ODLayer` (24 groups: 12 FFN + 12 attention head-dim widths; residual width E fixed per ladder level). CPU-tested on a tiny ViT.
-- **Command:** `sbatch slurm/e5_run.sbatch` → `python eval_prune_dp.py --crs 0.8 0.6 --N 5 --calib_n 4096 --probe_n 1024 --val_n 10000 --dp_cuts 12 --dp_min_p 0.05`. Importance is group-L1 only; the activation-aware variant (A4) is not implemented yet.
-- **Hardware:** DAS-6
-- **Dataset:** as E2 / E4a
-- **Settings:** CR 0.8, N=5 targets; residual width uniform; internal dims (FFN intermediate, QKV head-dims) per layer
-- **Result:** Previous run (27749, unfixed): DP profiles were not budget-matched (e.g. CR 0.8 L5: budget 61.0 M, DP 37.3 M), so DP-vs-uniform is not a valid comparison. Uniform-with-same-ranking matches the pruning ladder (sanity check). Fix: utils/budget.py greedy fill, one width unit at a time with probe-based errors; tiny-model CPU test gives <0.1% gap at every level. Rerun will confirm on GPU.
-- **Metrics:** Top-1 per level at matched params (untrained, trained)
-- **Logs/checkpoint paths:** —
-- **What worked:** Uniform-with-same-ranking sanity check matches the pruning ladder.
-- **What failed:** DP under-spent the budget (coarse front). Previous result is not used for claims.
-- **Interpretation:** Rerun decides whether DP allocation helps once budgets match.
-- **Decision:** Judge DP vs uniform only from the rerun, and only where parameter gaps are < 1%.
-- **Next experiment:** Read 27785 result (uniform vs DP at matched params per level).
+- **Code/config commit:** `4713f65-dirty` (`Elastoformer/eval_prune_dp.py`, `utils/budget.py`, `slurm/e5_run.sbatch`). FlexRank's DP is reused unchanged by wrapping each prunable width group as an `ODLayer` (24 groups: 12 FFN + 12 attention head-dim widths; residual width E fixed per ladder level).
+- **Command:** `sbatch slurm/e5_run.sbatch` → `python eval_prune_dp.py --crs 0.8 0.6 --N 5 --calib_n 4096 --probe_n 1024 --val_n 10000 --dp_cuts 12 --dp_min_p 0.05`. Importance is group-L1 only; the activation-aware variant (A4) is not implemented.
+- **Hardware:** DAS-6, A10. Profiling took 7.5 min per CR.
+- **Dataset:** calibration 4,096, probe 1,024, evaluation 10,000 images
+- **Settings:** CR 0.8 and 0.6, N=5 targets (5 levels); residual width per ladder level; internal dims (FFN intermediate, QKV head-dims) per layer
+- **Result (training-free top-1 %, 10k val; uniform and DP use the same per-layer ranking; tp-ladder is the published schedule):**
+
+| CR | Level | Budget = DP params (M) | Uniform | DP | tp-ladder | Loss uniform → DP |
+|---|---|---|---|---|---|---|
+| 0.8 | 1 | 3.64 | 0.10 | 0.10 | 0.10 | 6.946 → 6.943 |
+| 0.8 | 2 | 11.56 | 0.10 | 0.10 | 0.10 | 7.020 → 6.931 |
+| 0.8 | 3 | 23.73 | 0.10 | 0.12 | 0.09 | 6.982 → 6.932 |
+| 0.8 | 4 | 40.20 | 0.24 | 0.10 | 0.32 | 7.055 → 6.979 |
+| 0.8 | 5 | 61.00 | 0.65 | 1.52 | 0.85 | 6.941 → 6.585 |
+| 0.6 | 1 | 14.12 | 0.09 | 0.10 | 0.09 | 6.994 → 6.936 |
+| 0.6 | 2 | 23.73 | 0.10 | 0.12 | 0.09 | 6.982 → 6.932 |
+| 0.6 | 3 | 35.52 | 0.15 | 0.11 | 0.14 | 7.020 → 6.951 |
+| 0.6 | 4 | 50.02 | 0.27 | 0.15 | 0.38 | 7.146 → 7.080 |
+| 0.6 | 5 | 67.00 | 1.15 | 2.88 | 1.40 | 6.837 → 6.468 |
+
+- **Metrics:** Top-1 and loss per level at matched params (untrained). Trained comparison not run.
+- **Logs/checkpoint paths:** `runs/E5_20261013_4713f65-dirty/results_e5.json`, Slurm log `runs/E5_27785.out`
+- **What worked:** Budget fill closes the gap: DP params differ from the budget by <0.01% at all 10 points (before: 37 M of 61 M). Uniform and tp-ladder agree within noise (sanity check holds).
+- **What failed:** Nothing crashed. The test is uninformative: untrained pruning is at chance for levels 1-4 (0.1-0.4%; chance is 0.1%), so top-1 cannot rank allocations there. Only level 5 is above chance, and DP is better there (1.52 vs 0.65, 2.88 vs 1.15), but both are still ≤3%.
+- **Interpretation:** DP lowers the validation loss at all 10 points, which suggests a less damaging allocation, but all losses are near ln 1000 (6.91), so this is weak evidence. DP profiles are extreme: some layers keep full FFN width (3072) while others are cut to width 1 (CR 0.8 L1: eight of twelve FFN widths at 1). Such profiles may be harder to train than the uniform ladder, so training-free loss is not a safe proxy.
+- **Decision:** Hypothesis not supported and not testable training-free. Run the trained test (E5b): DP profiles trained with the E4a JKD recipe against JKD uniform. Needs approval.
+- **Next experiment:** E5b (see Next steps).
 
 ### E6 — Rank-axis ViT with joint FlexRank training and capped r_max
 - **Status:** DONE for L2-L4 (full runs 2026-10-12/13); L1 declared INFEASIBLE at fixed residual width (2026-10-13 decision)
@@ -352,14 +379,18 @@ Rules
 
 ## Next steps
 
-Updated 2026-10-13. Each item says what to do, what to check, and what result changes the plan. The full analysis is in [INSIGHTS-AND-ANALYSIS.md](INSIGHTS-AND-ANALYSIS.md).
+Updated 2026-10-14. Each item says what to do, what to check, and what result changes the plan. Nothing below has been submitted; every GPU item waits for a go-ahead. The full analysis is in [INSIGHTS-AND-ANALYSIS.md](INSIGHTS-AND-ANALYSIS.md).
 
-1. **Smoke test 27786 (E4 corrected-init fix).** Check: both F arms finish and write results; the joint arms finish. If it fails, fix the traceback before anything else; the E4a arms are cancelled automatically.
-2. **E4a arms 27787-27793 (pilot, pruning axis).** Check: per-level top-1 for F, Fc, J (CR 0.8 and 0.5), and JKD (CR 0.8). Decision: if J beats F by >= 2 pp mean at CR 0.8 with no level worse by > 0.5 pp, go to E4b (needs approval, ~40-60 GPU-h). If not, test A1/A9 before concluding.
-3. **E5 rerun 27785 (DP vs uniform, budget-matched).** Check: parameter gap per level < 1%; DP vs uniform top-1 at matched budgets. Decision: if DP wins at >= 3 of 4 levels, adopt DP profiles for E4a-style training; otherwise keep uniform.
-4. **Matched pruning baseline for E6.** Run the E4a J recipe at the budgets used by E6 (19 M and 45 M). Purpose: like-for-like comparison of rank vs pruning. No job submitted yet; needs a go-ahead.
+Done since 2026-10-13: smoke 27786 passed; the 7 E4a arms finished; the E5 rerun finished (see entries).
+
+1. **E5b: trained DP profiles (pruning axis).** Build DP profiles at the E4a budgets (CR 0.8: 3.64 / 19.05 / 46.54 / 86.57 M, with budget fill) and train them with the JKD recipe. Compare with JKD uniform (mean 47.46; L2 33.67, L3 73.82). Success: DP ≥ +0.5 pp mean with no level worse than −0.5 pp. About 4 h on 2 A40. If DP loses, drop it from the pruning axis and keep it only for rank. Needs a code change to feed explicit per-layer widths into `train_nested.py`.
+2. **E4a follow-up on the top level and L1 (2-3 runs of 2.5-4 h).** J loses 0.5-1.2 pp at L4 against Fc, and L1 at CR 0.8 never trains. Test: (a) weighted or sandwich sampler with more steps on L4; (b) L1 with a higher lr or longer schedule; (c) JKD at CR 0.5 to complete the KD comparison. If (a) closes the L4 gap without hurting L2-L3, use it as the E4b recipe.
+3. **E4b (full ImageNet, N=5, 40-60 GPU-h).** Only after item 2 picks the recipe. Needs approval. Use Fc as the baseline. Add a second seed at CR 0.8, since the pilot is one seed.
+4. **Confirm the rank-vs-pruning comparison.** JKD CR 0.8 gives pruning points at 19.05 M and 46.54 M under the E6 recipe. First diff the two runs' `config.json` files to confirm identical hyper-parameters (no GPU needed). Then report rank minus pruning (+30 to +37 pp at 19 M, +4.5 to +6.4 pp at 46 M). Add a second seed to both before it goes in the thesis.
 5. **S1 TF32 check (E2).** Rerun the full-rank DataSVD logit comparison with TF32 disabled. Expect max logit diff < 1e-3. Short job.
 6. **Additive-error re-check (E2/E9).** Repeat the 30-profile additive check with 5,000 probe images to see whether rho stays near 0.
-7. **Node storage (data staging).** Waiting for the user's instruction. Facts: /local is not writable by users; /dev/shm is 63 GB of RAM on GPU nodes.
-8. **Jetson measurement (E7).** Needs device access. Required before any edge claim.
-9. **Commit and push** after every result update (this journal, INSIGHTS-AND-ANALYSIS.md, and any code change).
+7. **Smallest level on the rank axis.** Allow a narrower residual width in the rank model so a 3.6 M level is feasible, or drop L1 from rank comparisons permanently. Decide after item 2.
+8. **Node storage (data staging).** Waiting for the user's instruction. Facts: /local is not writable by users; /dev/shm is 63 GB of RAM on GPU nodes.
+9. **Jetson measurement (E7).** Needs device access. Required before any edge claim.
+10. **LM track (E8-E10).** Not started. The vision results are enough to start the GPT-2 pilot (E8) in parallel if an early LM claim is wanted.
+11. **Commit and push** after every result update (this journal, INSIGHTS-AND-ANALYSIS.md, and any code change).
