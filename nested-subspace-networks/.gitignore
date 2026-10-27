@@ -1,0 +1,38 @@
+# Virtual environment
+.venv/
+
+# Model checkpoints and weights
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.ckpt
+
+# Logs
+*.log
+nohup.out
+lightning_logs/
+**/lightning_logs/
+
+# Wandb experiment tracking
+wandb/
+**/wandb/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+*.egg-info/
+
+# Large model directories
+**/gemma-*/
+
+# Results, data and figures
+results/
+figures/
+data/
+
+# IDE / OS
+.DS_Store
