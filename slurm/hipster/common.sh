@@ -5,16 +5,18 @@
 #    per GPU; max 7 days; shared multi-tenant cluster, so never --exclusive, request exactly what
 #    the job needs; time limit = 2x a pessimistic runtime estimate;
 #  - conda env my_env (python 3.9, torch 2.8.0+cu128, transformers 4.57.6), used read-only;
-#  - /home is small and shared with other projects: everything heavy on /scratch/$USER/elasticrank.
-# Usage at the top of a job script:  source /scratch/$USER/elasticrank/repo/slurm/hipster/common.sh gpu|cpu
+#  - /home is backed up, /scratch is wiped every few weeks and not backed up: repo, caches and run
+#    results live in /home/$USER/elasticrank; only checkpoints (reproducible) go to /scratch/$USER/elasticrank.
+# Usage at the top of a job script:  source /home/$USER/elasticrank/repo/slurm/hipster/common.sh gpu|cpu
 set -eo pipefail
 KIND=${1:-gpu}
-export EROOT=/scratch/$USER/elasticrank
+export EROOT=/home/$USER/elasticrank                  # repo, hf_cache, runs: backed up
 export REPO=$EROOT/repo
+export CKPT=/scratch/$USER/elasticrank/checkpoints      # checkpoints only: scratch is deleted every few weeks
 export HF_HOME=$EROOT/hf_cache
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
-mkdir -p "$EROOT/runs" "$HF_HOME"
+mkdir -p "$EROOT/runs" "$HF_HOME" "$CKPT"
 if [[ "$KIND" == gpu ]]; then
   if ! type module >/dev/null 2>&1 && [[ -f /etc/profile.d/modules.sh ]]; then
     source /etc/profile.d/modules.sh

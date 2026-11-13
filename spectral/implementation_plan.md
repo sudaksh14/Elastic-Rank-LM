@@ -127,7 +127,7 @@ Run `python spectral/diagnostics.py --selftest` for a synthetic check (seconds, 
 
 ## Experiments on hipster
 
-The spectral track runs on hipster. Rules: every batch script sources `slurm/hipster/common.sh gpu|cpu`; GPU work goes to `performance` (RTX 6000 Ada, 32 CPUs per GPU), CPU-only work to `capacity`; no `--exclusive` (shared cluster); time limit is twice the pessimistic runtime, at most 7 days. Code is pushed with `slurm/hipster/sync.sh` to `/scratch/skalra/elasticrank/repo`; runs go to `/scratch/skalra/elasticrank/runs`.
+The spectral track runs on hipster. Rules: every batch script sources `slurm/hipster/common.sh gpu|cpu`; GPU work goes to `performance` (RTX 6000 Ada, 32 CPUs per GPU), CPU-only work to `capacity`; no `--exclusive` (shared cluster); time limit is twice the pessimistic runtime, at most 7 days. Code is pushed with `slurm/hipster/sync.sh` to `/home/skalra/elasticrank/repo`; runs and caches go to `/home/skalra/elasticrank` (backed up); only checkpoints go to `/scratch/skalra/elasticrank/checkpoints` (scratch is wiped every few weeks).
 
 | Job | Content | Depends on |
 |---|---|---|
