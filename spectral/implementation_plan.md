@@ -33,7 +33,9 @@ This forward is LYRA's factored pass (its Eqs. 3–5 with `S = A·B`), applied t
 
 ## Phase 0: offline diagnostics (S0, no training)
 
-New script `scripts/spectral_diagnostics.py`. It decides whether the rest is built.
+**Status 2026-11-13: implemented as [diagnostics.py](diagnostics.py) and queued on hipster (jobs 391308 GPT-2, 391309 TinyLlama-1.1B; entry S0 in [EXP-JOURNAL.md](../EXP-JOURNAL.md)).** Differences from the list below: MaCP-style banded selection, WaveletFT-style random locations and the Hadamard basis are not implemented (random locations cannot compete when compressing a pretrained weight); the shared rotation is per layer (an upper bound), not pooled; no plots yet, only `records.jsonl` and `summary.md`.
+
+The script decides whether the rest is built.
 
 - **Input:** a model name, a calibration split, a list of layers.
 - **Per layer, compute the error-vs-bits curve for:**
@@ -48,7 +50,7 @@ New script `scripts/spectral_diagnostics.py`. It decides whether the rest is bui
 - **Output:** one JSON per layer and summary plots by layer type (q, k, v, o, FFN up, FFN down) and depth. These plots answer RQ1 and the reconstruction half of RQ3 from `DCT_papers.md` §6.
 - **Go/no-go:** continue only if some aligned transform beats both the Gaussian null and DataSVD at equal bits on at least one layer type.
 
-Run on GPT-2 locally on CPU for a smoke test, then on DAS-6 for Llama-3.2-1B.
+Run `python spectral/diagnostics.py --selftest` for a synthetic check (seconds, CPU). Real runs go to hipster: GPT-2 on capacity without a GPU, TinyLlama-1.1B on performance with one GPU. Llama-3.2-1B is gated and not cached on hipster yet.
 
 ## Phase 1: core layer
 
@@ -123,13 +125,13 @@ Run on GPT-2 locally on CPU for a smoke test, then on DAS-6 for Llama-3.2-1B.
 - Switching: write `factor + iDCT(patch)` into a scratch buffer; never modify the shared factors in place.
 - Test: with zero patches the model equals the checkpoint at every level.
 
-## Experiments on DAS-6
+## Experiments on hipster
 
-Follow the existing job rules: every batch script sources `slurm/common.sh`; GPU work is queued, never run on CPU nodes; `#SBATCH --exclusive`; time limit is twice the pessimistic runtime, at most 150 h.
+The spectral track runs on hipster. Rules: every batch script sources `slurm/hipster/common.sh gpu|cpu`; GPU work goes to `performance` (RTX 6000 Ada, 32 CPUs per GPU), CPU-only work to `capacity`; no `--exclusive` (shared cluster); time limit is twice the pessimistic runtime, at most 7 days. Code is pushed with `slurm/hipster/sync.sh` to `/scratch/skalra/elasticrank/repo`; runs go to `/scratch/skalra/elasticrank/runs`.
 
 | Job | Content | Depends on |
 |---|---|---|
-| `s0_diag.sbatch` | Phase 0 on GPT-2 and Llama-3.2-1B | Phase 0 |
+| `s0_diag_cpu.sbatch`, `s0_diag_gpu.sbatch` (exist) | Phase 0 on GPT-2 and TinyLlama-1.1B | Phase 0 |
 | `s1_fronts.sbatch` | Untrained fronts: SVD, DataSVD, DCT, DataDCT with each alignment | Phases 1–3 |
 | `s2_train.sbatch` | Joint nested training, two seeds, best S1 variant vs FlexRank | Phase 4 |
 | `s3_patches.sbatch` | Idea B on a trained FlexRank checkpoint | Idea B module |
