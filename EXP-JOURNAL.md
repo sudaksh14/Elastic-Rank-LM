@@ -27,7 +27,7 @@ Rules
 | E8 | FlexRank LM reproduction: GPT-2 → Llama-3.2-1B | PLANNED | I-0(b), I-10 | DAS-6 | 3 → 120 | 2026-10-06 |
 | E9 | LM diagnostics: additive error, TTFT/TPOT, KV reuse | PLANNED | E8 | DAS-6 | 3–6 | 2026-10-06 |
 | E10 | Scalarization / non-convexity probe (RQ1 gate) | PLANNED | E8 | DAS-6 | 10–20 | 2026-10-06 |
-| S0 | Spectral diagnostics: SVD vs DCT / Haar / KLT at equal bits, no training | QUEUED (hipster PENDING_CPU, PENDING_GPU) | — | hipster capacity (CPU) + performance (1 GPU) | ≤4 | 2026-11-13 |
+| S0 | Spectral diagnostics: SVD vs DCT / Haar / KLT at equal bits, no training | QUEUED (hipster 391354, 391355) | — | hipster capacity (CPU) + performance (1 GPU) | ≤4 | 2026-11-13 |
 | F1 | Final ViT fronts | PLANNED | E4b, E5, E6 | DAS-6 | TBD | 2026-10-06 |
 | F2 | Final edge deployment | PLANNED | E7 | Jetson | 0 | 2026-10-06 |
 | F3 | Final LM fronts | PLANNED | E8–E10 | DAS-6 | TBD | 2026-10-06 |
@@ -369,19 +369,19 @@ Rules
 - **Status:** QUEUED (both jobs pending on priority, 2026-11-13)
 - **Date:** submitted 2026-11-13
 - **Hypothesis:** H0/H1 of [spectral/paper_plan.md](spectral/paper_plan.md) §6. After alignment (seriation or KLT), a transform-domain representation has lower Gram-weighted error than DataSVD at equal stored bits, and beats the Gaussian null. Expected for the raw DCT: no.
-- **Code/config commit:** `1f6ad11` (branch `main`), script `spectral/diagnostics.py`
+- **Code/config commit:** `ccf4de9` (branch `main`), script `spectral/diagnostics.py`
 - **Command:**
   ```bash
   slurm/hipster/sync.sh        # local, Git Bash
   # on hipster, in /home/skalra/elasticrank/repo
-  sbatch slurm/hipster/s0_diag_cpu.sbatch gpt2                                              # job PENDING_CPU
-  sbatch slurm/hipster/s0_diag_gpu.sbatch TinyLlama/TinyLlama-1.1B-Chat-v1.0 --layer-stride 2   # job PENDING_GPU
+  sbatch slurm/hipster/s0_diag_cpu.sbatch gpt2                                              # job 391354
+  sbatch slurm/hipster/s0_diag_gpu.sbatch TinyLlama/TinyLlama-1.1B-Chat-v1.0 --layer-stride 2   # job 391355
   ```
-- **Hardware:** hipster. PENDING_CPU: capacity, 16 CPUs, 48 GB, no GPU, limit 4 h. PENDING_GPU: performance, 1 × RTX 6000 Ada, 32 CPUs, limit 8 h.
+- **Hardware:** hipster. 391354: capacity, 16 CPUs, 48 GB, no GPU, limit 4 h. 391355: performance, 1 × RTX 6000 Ada, 32 CPUs, limit 8 h.
 - **Dataset:** wikitext-2-raw-v1 train, first 128 × 512 tokens, for the input Gram matrices.
 - **Settings:** budgets 0.05–0.7 of dense fp16 bits (index bits counted); bases spatial, dct, dct_perm, haar_perm, klt; methods block, geom, topk, topk_data, rankband (kappa 0.4–1.0), plus SVD, DataSVD and a Gaussian null. GPT-2: all 48 linear layers. TinyLlama: every second block (11 blocks × 7 layers).
 - **Result:** pending.
-- **Logs/checkpoint paths:** `/home/skalra/elasticrank/runs/s0_diag_{cpu,gpu}-<jobid>.out`; run dirs `/home/skalra/elasticrank/runs/S0_<model>_<date>_1f6ad11/` (`records.jsonl`, `summary.md`, `config.json`).
+- **Logs/checkpoint paths:** `/home/skalra/elasticrank/runs/s0_diag_{cpu,gpu}-<jobid>.out`; run dirs `/home/skalra/elasticrank/runs/S0_<model>_<date>_ccf4de9/` (`records.jsonl`, `summary.md`, `config.json`).
 - **What worked:** synthetic self-test on the hipster login node (transform orthonormality, SVD invariance under change of basis, DataSVD optimality) passes; models and data prefetched.
 - **Decision:** go/no-go for Phase 1 of [spectral/implementation_plan.md](spectral/implementation_plan.md) from the table at the end of `summary.md`.
 - **Next experiment:** S1 (untrained fronts) if any fixed-transform cell passes; otherwise the KLT / residual-width variant or idea B.

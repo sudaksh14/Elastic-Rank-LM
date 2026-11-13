@@ -33,7 +33,7 @@ This forward is LYRA's factored pass (its Eqs. 3–5 with `S = A·B`), applied t
 
 ## Phase 0: offline diagnostics (S0, no training)
 
-**Status 2026-11-13: implemented as [diagnostics.py](diagnostics.py) and queued on hipster (jobs 391308 GPT-2, 391309 TinyLlama-1.1B; entry S0 in [EXP-JOURNAL.md](../EXP-JOURNAL.md)).** Differences from the list below: MaCP-style banded selection, WaveletFT-style random locations and the Hadamard basis are not implemented (random locations cannot compete when compressing a pretrained weight); the shared rotation is per layer (an upper bound), not pooled; no plots yet, only `records.jsonl` and `summary.md`.
+**Status 2026-11-13: implemented as [diagnostics.py](diagnostics.py) and queued on hipster (jobs 391354 GPT-2, 391355 TinyLlama-1.1B; entry S0 in [EXP-JOURNAL.md](../EXP-JOURNAL.md)).** Differences from the list below: MaCP-style banded selection, WaveletFT-style random locations and the Hadamard basis are not implemented (random locations cannot compete when compressing a pretrained weight); the shared rotation is per layer (an upper bound), not pooled; no plots yet, only `records.jsonl` and `summary.md`.
 
 The script decides whether the rest is built.
 
