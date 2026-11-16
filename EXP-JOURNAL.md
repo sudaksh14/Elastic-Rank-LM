@@ -27,7 +27,7 @@ Rules
 | E8 | FlexRank LM reproduction: GPT-2 → Llama-3.2-1B | PLANNED | I-0(b), I-10 | DAS-6 | 3 → 120 | 2026-10-06 |
 | E9 | LM diagnostics: additive error, TTFT/TPOT, KV reuse | PLANNED | E8 | DAS-6 | 3–6 | 2026-10-06 |
 | E10 | Scalarization / non-convexity probe (RQ1 gate) | PLANNED | E8 | DAS-6 | 10–20 | 2026-10-06 |
-| S0 | Spectral diagnostics: SVD vs DCT / Haar / KLT at equal bits, no training | QUEUED (hipster 391354, 391355) | — | hipster capacity (CPU) + performance (1 GPU) | ≤4 | 2026-11-13 |
+| S0 | Spectral diagnostics: SVD vs DCT / Haar / KLT at equal bits, no training | DONE (2026-11-15): DCT gate failed; KLT upper bound positive | — | hipster capacity (CPU) + performance (1 GPU) | ≤4 | 2026-11-13 |
 | F1 | Final ViT fronts | PLANNED | E4b, E5, E6 | DAS-6 | TBD | 2026-10-06 |
 | F2 | Final edge deployment | PLANNED | E7 | Jetson | 0 | 2026-10-06 |
 | F3 | Final LM fronts | PLANNED | E8–E10 | DAS-6 | TBD | 2026-10-06 |
@@ -366,7 +366,7 @@ Rules
 - **Next experiment:** thesis Stage B or pivot
 
 ### S0 — Spectral diagnostics: can a fixed transform beat SVD / DataSVD at equal bits?
-- **Status:** QUEUED (both jobs pending on priority, 2026-11-13)
+- **Status:** DONE (2026-11-15): gate failed for DCT / Haar; KLT upper bound positive
 - **Date:** submitted 2026-11-13
 - **Hypothesis:** H0/H1 of [spectral/paper_plan.md](spectral/paper_plan.md) §6. After alignment (seriation or KLT), a transform-domain representation has lower Gram-weighted error than DataSVD at equal stored bits, and beats the Gaussian null. Expected for the raw DCT: no.
 - **Code/config commit:** `ccf4de9` (branch `main`), script `spectral/diagnostics.py`
@@ -380,11 +380,24 @@ Rules
 - **Hardware:** hipster. 391354: capacity, 16 CPUs, 48 GB, no GPU, limit 4 h. 391355: performance, 1 × RTX 6000 Ada, 32 CPUs, limit 8 h.
 - **Dataset:** wikitext-2-raw-v1 train, first 128 × 512 tokens, for the input Gram matrices.
 - **Settings:** budgets 0.05–0.7 of dense fp16 bits (index bits counted); bases spatial, dct, dct_perm, haar_perm, klt; methods block, geom, topk, topk_data, rankband (kappa 0.4–1.0), plus SVD, DataSVD and a Gaussian null. GPT-2: all 48 linear layers. TinyLlama: every second block (11 blocks × 7 layers).
-- **Result:** pending.
+- **Result (2026-11-15, both jobs COMPLETED, 8.5 min CPU and 7.9 min GPU):** the gate fails for every fixed transform: 0 of 30 cells (GPT-2) and 0 of 48 (TinyLlama) beat DataSVD. The per-layer KLT basis beats DataSVD everywhere, but its rotations are not counted in the budget.
+- **Metrics (mean relative Gram-weighted error over layers; lower is better):**
+  | Method | GPT-2 b=0.10 | GPT-2 b=0.30 | TinyLlama b=0.10 | TinyLlama b=0.30 |
+  |---|---|---|---|---|
+  | SVD | 0.410 | 0.250 | 0.460 | 0.288 |
+  | DataSVD | 0.244 | 0.124 | 0.276 | 0.138 |
+  | DCT low-frequency block (raw / after seriation) | 0.873 / 0.859 | 0.670 / 0.655 | 0.878 / 0.877 | 0.664 / 0.668 |
+  | DCT rank × bandwidth, best kappa | 0.410 (kappa = 1, i.e. SVD) | 0.246 | 0.453 | 0.283 |
+  | KLT block (dense slice in the rotated basis; basis not counted) | 0.152 | 0.076 | 0.139 | 0.066 |
+  | KLT rank × bandwidth, best kappa (basis not counted) | 0.168 | 0.080 | 0.167 | 0.074 |
+- **What worked:** pipeline, self-test, offline run on both partitions. Sanity checks hold on real weights: SVD is identical in every orthonormal basis; KLT rank-band at kappa = 1 equals DataSVD.
+- **What failed:** H0 and H1 for the DCT. Plain error of a DCT block equals 1 − budget on every layer (max deviation 0.025), the same as a Gaussian matrix; DCT top-k equals the Gaussian null (0.743 vs 0.749 at b=0.10, GPT-2). Seriation changes nothing. In 749 of 750 (layer, budget) cases the best DCT bandwidth is the full one.
+- **Interpretation:** pretrained weights have no DCT or Haar compaction, with or without re-ordering, so the DCT framing is dropped (the plan's kill test). The useful structure is in the activations: in the data basis, a dense slice roughly halves DataSVD's error, and it beats rank-within-band, so width is the stronger axis there. This is an upper bound: per-layer rotations cost m² + n² parameters unless shared or absorbed, and FFN hidden units cannot be rotated at all.
+- **Limits:** error measured on the same 65k tokens used for the Gram matrices (in-sample); one calibration set; TinyLlama at every second block; reconstruction error only, no perplexity; kappa grid stops at 0.4, where the optimum sits at low budgets.
 - **Logs/checkpoint paths:** `/home/skalra/elasticrank/runs/s0_diag_{cpu,gpu}-<jobid>.out`; run dirs `/home/skalra/elasticrank/runs/S0_<model>_<date>_ccf4de9/` (`records.jsonl`, `summary.md`, `config.json`).
 - **What worked:** synthetic self-test on the hipster login node (transform orthonormality, SVD invariance under change of basis, DataSVD optimality) passes; models and data prefetched.
-- **Decision:** go/no-go for Phase 1 of [spectral/implementation_plan.md](spectral/implementation_plan.md) from the table at the end of `summary.md`.
-- **Next experiment:** S1 (untrained fronts) if any fixed-transform cell passes; otherwise the KLT / residual-width variant or idea B.
+- **Decision:** no-go for the DCT variant of idea A. Do not build Phase 1 as written. Next is S0b: the same diagnostic with a shared residual rotation, honest basis cost and held-out error.
+- **Next experiment:** S0b (shared-basis, held-out), then S1 perplexity fronts for the surviving variant.
 
 ### F1 — Final ViT fronts
 - **Status:** PLANNED — scope fixed after E4b/E5/E6 (plan §8).
