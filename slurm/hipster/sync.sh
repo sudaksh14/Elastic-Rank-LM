@@ -8,5 +8,5 @@ sed -i "s/\r$//" slurm/hipster/*.sh slurm/hipster/*.sbatch   # Slurm rejects CRL
 SHA=$(git rev-parse --short HEAD); git diff --quiet HEAD && [ -z "$(git ls-files -o --exclude-standard)" ] || SHA=$SHA-dirty
 echo "$SHA" > GIT_SHA
 tar czf - --exclude=.git --exclude=__pycache__ --exclude="related papers" --exclude=project --exclude="*.pyc" --exclude=outputs . \
- | ssh -o BatchMode=yes hipster 'mkdir -p /home/$USER/elasticrank/repo /home/$USER/elasticrank/runs && tar xzf - -C /home/$USER/elasticrank/repo && echo synced' 2>&1 | tail -1
+ | ssh -o BatchMode=yes hipster 'mkdir -p /home/$USER/elasticrank/repo/jobs /home/$USER/elasticrank/runs && tar xzf - -C /home/$USER/elasticrank/repo && echo synced' 2>&1 | tail -1
 echo "synced $SHA"

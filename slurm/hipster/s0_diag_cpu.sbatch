@@ -3,9 +3,8 @@
 #SBATCH --partition=capacity
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=48G
 #SBATCH --time=04:00:00
-#SBATCH --output=/home/skalra/elasticrank/runs/%x-%j.out
+#SBATCH --output=jobs/%x-%j.out
 # S0 spectral diagnostics without a GPU (capacity partition, 16 CPUs). For small models only
 # (GPT-2: 48 layers up to 768 x 3072). Estimate 0.5-2 h pessimistic, limit = 2x.
 #   sbatch slurm/hipster/s0_diag_cpu.sbatch <hf model id> [extra diagnostics.py args]

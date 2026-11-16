@@ -5,7 +5,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --time=08:00:00
-#SBATCH --output=/home/skalra/elasticrank/runs/%x-%j.out
+#SBATCH --output=jobs/%x-%j.out
 # S0 spectral diagnostics on one GPU (performance: 1 x RTX 6000 Ada, 32 CPUs per GPU as the
 # partition enforces; no --exclusive on this shared cluster). No training.
 # Estimate for TinyLlama-1.1B at stride 2 (11 blocks x 7 layers): 2-4 h pessimistic, limit = 2x.

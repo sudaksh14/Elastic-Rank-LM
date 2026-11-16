@@ -22,6 +22,7 @@ if [[ "$KIND" == gpu ]]; then
     source /etc/profile.d/modules.sh
   fi
   export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+  module load cuda/12.9.1     # torch 2.8.0+cu128 -> closest available module (11.8.0, 12.9.1, 12.9.2, 13.3.0)
 fi
 eval "$(/home/$USER/miniconda3/bin/conda shell.bash hook)"
 conda activate my_env
