@@ -28,6 +28,7 @@ Rules
 | E9 | LM diagnostics: additive error, TTFT/TPOT, KV reuse | PLANNED | E8 | DAS-6 | 3–6 | 2026-10-06 |
 | E10 | Scalarization / non-convexity probe (RQ1 gate) | PLANNED | E8 | DAS-6 | 10–20 | 2026-10-06 |
 | S0 | Spectral diagnostics: SVD vs DCT / Haar / KLT at equal bits, no training | DONE (2026-11-15): DCT gate failed; KLT upper bound positive | — | hipster capacity (CPU) + performance (1 GPU) | ≤4 | 2026-11-13 |
+| S0b | Spectral diagnostics, shared absorbable residual rotation, held-out error | QUEUED (hipster 394793) | S0 | hipster capacity, 1 x L4 | ≤2 | 2026-11-16 |
 | F1 | Final ViT fronts | PLANNED | E4b, E5, E6 | DAS-6 | TBD | 2026-10-06 |
 | F2 | Final edge deployment | PLANNED | E7 | Jetson | 0 | 2026-10-06 |
 | F3 | Final LM fronts | PLANNED | E8–E10 | DAS-6 | TBD | 2026-10-06 |
@@ -398,6 +399,26 @@ Rules
 - **What worked:** synthetic self-test on the hipster login node (transform orthonormality, SVD invariance under change of basis, DataSVD optimality) passes; models and data prefetched.
 - **Decision:** no-go for the DCT variant of idea A. Do not build Phase 1 as written. Next is S0b: the same diagnostic with a shared residual rotation, honest basis cost and held-out error.
 - **Next experiment:** S0b (shared-basis, held-out), then S1 perplexity fronts for the surviving variant.
+
+### S0b — Spectral diagnostics with a shared residual rotation and held-out error
+- **Status:** QUEUED (job 394793, 2026-11-16; 729 jobs were pending in `capacity`, Slurm's `--test-only` start estimate was 2027-05-25 and is not trustworthy, S0 started within about a day on the same partition)
+- **Date:** submitted 2026-11-16
+- **Hypothesis:** S0 found that per-layer data-basis slices halve DataSVD's error but charged nothing for the rotations. If ONE pooled rotation of the residual stream (absorbable for RMSNorm models) plus unit selection on the free sides (MLP hidden units, head dims) plus least-squares compensation of dropped inputs still beats DataSVD on HELD-OUT tokens at equal stored parameters, the rank × width direction is alive. If not, it is dead.
+- **Code/config commit:** `2a0a69b` (branch `main`), script `spectral/diagnostics_shared.py`, job `slurm/hipster/s0b_gpu.sbatch`
+- **Command:**
+  ```bash
+  slurm/hipster/sync.sh                                     # local, Git Bash
+  # on hipster, from /home/skalra/elasticrank/repo
+  sbatch slurm/hipster/s0b_gpu.sbatch                       # job 394793: GPT-2, then TinyLlama-1.1B (every 2nd block)
+  ```
+- **Hardware:** hipster `capacity`, 1 × L4 24 GB, 16 CPUs, limit 4 h (2x a 2 h pessimistic estimate), no `--mem`, no `--exclusive`; CUDA module `cuda/12.9.1`.
+- **Dataset:** fit on wikitext-2-raw train (128 × 512 tokens), held-out on wikitext-2-raw validation (64 × 512 tokens).
+- **Settings:** budgets 0.05–0.7 of dense parameters; residual-side kept fraction 0.05–1.0 (10 values), free-side kept fraction 0.1–1.0 (6 values); transforms: shared (pooled PCA of readers' inputs and writers' outputs), native (coordinates ranked by variance, no rotation), own (per-layer PCA, upper bound); rank variants at residual fraction 0.4 and 0.7. Candidate chosen by TRAIN error, TEST error reported.
+- **Result:** pending.
+- **Logs/checkpoint paths:** `/home/skalra/elasticrank/repo/jobs/s0b_shared-394793.out`; run dirs `/home/skalra/elasticrank/runs/S0b_<model>_<date>_2a0a69b/` (`records.jsonl`, `summary.md`, `config.json`).
+- **What worked:** self-test on the login node (rotation invariance of the Gram-weighted rank error, per-row error decomposition equals the direct trace formula, compensation never hurts on the fitting split, cumulative-sum formula for writers).
+- **Decision rule:** continue to S1 (perplexity of the composed model, untrained) only if a shared-basis method beats DataSVD on held-out error in most (layer type, budget) cells and in most layers; otherwise stop the rank × width direction and fall back to idea B.
+- **Limits to keep in mind:** error is per layer and independent (residual width is really one number for the whole network, and errors compound); no perplexity; attention head structure and RoPE are ignored for q/k selection; GPT-2 uses LayerNorm, so its rotation is not free without the mean-removal rewrite (TinyLlama is the clean case).
 
 ### F1 — Final ViT fronts
 - **Status:** PLANNED — scope fixed after E4b/E5/E6 (plan §8).
